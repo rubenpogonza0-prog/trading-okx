@@ -1,0 +1,56 @@
+name: OKX trading cycle
+
+on:
+  schedule:
+    # GitHub's scheduler is best-effort and won't run more often than every
+    # 5 minutes; 15 min is a realistic floor for reliable timing.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {} # lets you trigger a cycle manually from the Actions tab
+
+concurrency:
+  group: okx-trading-cycle
+  cancel-in-progress: false # never cancel a run that might be mid-order-placement
+
+permissions:
+  contents: write # needed to commit backend/data/ (bot position state) back
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run one trading cycle
+        working-directory: backend
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+          OKX_DEMO: ${{ vars.OKX_DEMO || '1' }}
+          NEWS_FILTER_ENABLED: ${{ vars.NEWS_FILTER_ENABLED || '0' }}
+        run: npm run trade:once
+
+      - name: Persist bot state (positions/cooldowns) and logs
+        run: |
+          git config user.name "okx-trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          # backend/data/ is .gitignored for local dev (nobody wants their
+          # own manual-run state committed) — force-add just these two
+          # files here, since CI is intentionally using git as the
+          # persistence layer for bot state between stateless runs.
+          git add -f backend/data/state.json backend/data/cycles.log
+          git diff --cached --quiet && exit 0
+          git commit -m "Update bot state [skip ci]"
+          git pull --rebase --autostash
+          git push
