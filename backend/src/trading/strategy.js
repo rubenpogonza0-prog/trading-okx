@@ -35,6 +35,7 @@ function compute1h(candles) {
     ema20: ema20[i],
     ema50: ema50[i],
     ema50Prev: ema50[i - 1],
+    ema50_5ago: ema50[i - 5],
     ema200: ema200[i],
     rsi: rsi14[i],
     macdHist: histogram[i],
@@ -56,10 +57,23 @@ function bias1h(m) {
 
   const trendUp = m.ema20 > m.ema50 && m.ema50 > m.ema200 && m.close > m.ema20;
   const trendDown = m.ema20 < m.ema50 && m.ema50 < m.ema200 && m.close < m.ema20;
+  // A reversal in progress: price now trading above/below EMA50 (the
+  // crossover already happened — not necessarily on this exact candle,
+  // which would miss the whole move after the first bar) AND EMA50 itself
+  // has turned, confirming it's an actual shift in medium-term direction
+  // rather than a single noisy poke through the line.
   const reversalUp =
-    m.close > m.ema50 && m.closePrev <= m.ema50Prev && m.rsi > 50 && m.macdHist > 0;
+    m.close > m.ema50 &&
+    m.ema50_5ago !== undefined &&
+    m.ema50 > m.ema50_5ago &&
+    m.rsi > 50 &&
+    m.macdHist > 0;
   const reversalDown =
-    m.close < m.ema50 && m.closePrev >= m.ema50Prev && m.rsi < 50 && m.macdHist < 0;
+    m.close < m.ema50 &&
+    m.ema50_5ago !== undefined &&
+    m.ema50 < m.ema50_5ago &&
+    m.rsi < 50 &&
+    m.macdHist < 0;
 
   const momentumUp = m.macdHist > 0 && m.rsi > 50 && m.rsi < 80;
   const momentumDown = m.macdHist < 0 && m.rsi < 50 && m.rsi > 20;

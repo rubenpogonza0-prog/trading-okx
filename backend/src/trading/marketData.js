@@ -8,12 +8,17 @@ export async function getSwapTickers(okx) {
   return okx.get("/api/v5/market/tickers", { instType: "SWAP" });
 }
 
-// bar: "1H" or "30m". OKX returns candles newest-first; we reverse to oldest-first
-// so indicator math can walk forward in time.
+// bar: "1H" or "30m". OKX returns candles newest-first, with the very
+// first entry usually being the still-forming current bar (confirm="0").
+// We reverse to oldest-first and drop any trailing unconfirmed bar: its
+// volume is a partial-period count, not comparable to a full-period
+// average (the volume-confirmation checks in strategy.js would otherwise
+// almost always fail right after a new bar opens, for reasons that have
+// nothing to do with actual market strength).
 export async function getCandles(okx, instId, bar, limit = 300) {
   const raw = await okx.get("/api/v5/market/candles", { instId, bar, limit });
-  return raw
-    .map(([ts, o, h, l, c, vol, volCcy]) => ({
+  const parsed = raw
+    .map(([ts, o, h, l, c, vol, volCcy, , confirm]) => ({
       ts: Number(ts),
       open: Number(o),
       high: Number(h),
@@ -21,8 +26,13 @@ export async function getCandles(okx, instId, bar, limit = 300) {
       close: Number(c),
       volume: Number(vol),
       volCcy: Number(volCcy),
+      confirm,
     }))
     .reverse();
+  while (parsed.length && parsed[parsed.length - 1].confirm === "0") {
+    parsed.pop();
+  }
+  return parsed;
 }
 
 export async function setLeverage(okx, { instId, lever, mgnMode }) {
