@@ -54,6 +54,7 @@ export function createOkxClient({ apiKey, apiSecret, passphrase, demo }) {
 
   return {
     get: (path, query) => request("GET", path, { query }),
+    post: (path, body) => request("POST", path, { body }),
   };
 }
 
