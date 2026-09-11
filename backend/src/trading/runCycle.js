@@ -7,12 +7,20 @@ import { executeTrade } from "./execution.js";
 import { checkNews } from "./newsFilter.js";
 import { loadState, saveState, appendCycleLog } from "./state.js";
 
+// Reconciles local state against OKX's actual live positions — the source
+// of truth. This matters even more when `backend/data/state.json` isn't
+// guaranteed to survive between runs (e.g. a stateless CI runner): without
+// it, a position OKX already holds but that this process doesn't remember
+// opening would be invisible to the max-open-positions and
+// no-duplicate-instrument checks, defeating those risk limits.
 async function reconcileClosedPositions(okx, state) {
   const live = await getOpenPositions(okx);
-  const liveInstIds = new Set(live.filter((p) => Number(p.pos) !== 0).map((p) => p.instId));
+  const liveByInstId = new Map(
+    live.filter((p) => Number(p.pos) !== 0).map((p) => [p.instId, p])
+  );
 
   for (const instId of Object.keys(state.positions)) {
-    if (liveInstIds.has(instId)) continue;
+    if (liveByInstId.has(instId)) continue;
 
     const tracked = state.positions[instId];
     let hitSl = null;
@@ -34,6 +42,26 @@ async function reconcileClosedPositions(okx, state) {
     }
     delete state.positions[instId];
   }
+
+  // Adopt any live position this process has no record of (SL/TP unknown —
+  // it was either opened before state existed, or state was lost). It still
+  // counts toward max-open-positions and blocks re-entry on that symbol;
+  // it just won't get an SL-cooldown when it eventually closes, since we
+  // don't know its stop level to compare against.
+  for (const [instId, pos] of liveByInstId) {
+    if (state.positions[instId]) continue;
+    state.positions[instId] = {
+      side: Number(pos.pos) > 0 ? "long" : "short",
+      entry: Number(pos.avgPx),
+      sl: null,
+      tp: null,
+      size: Number(pos.pos),
+      leverage: Number(pos.lever),
+      openedAt: pos.cTime ? new Date(Number(pos.cTime)).toISOString() : new Date().toISOString(),
+      adopted: true,
+    };
+  }
+
   return state;
 }
 

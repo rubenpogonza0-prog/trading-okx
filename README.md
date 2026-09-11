@@ -45,7 +45,35 @@ is not compatible with unattended real-money trading.
 Start with `OKX_DEMO=1` in `.env` and a demo-trading API key, run it for a
 while, and read the logs before pointing it at your live account.
 
-### Deploying (Railway — simplest path with no server to manage)
+### Deploying (GitHub Actions — no new account needed)
+
+Since the code already lives in this GitHub repo, `.github/workflows/trade-cycle.yml`
+runs a cycle on a schedule using GitHub's own infrastructure — nothing new
+to sign up for.
+
+1. Create an OKX API key at okx.com → API management: **Trade** permission
+   only, **never Withdraw**.
+2. In this repo: **Settings → Secrets and variables → Actions**.
+3. Under **Secrets**, add: `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE`.
+4. Under **Variables** (same page, different tab), optionally add
+   `OKX_DEMO` = `1` (default if you don't set it — demo mode) or `0` (live)
+   once you're ready.
+5. That's it. The workflow runs every 15 minutes (GitHub's scheduler won't
+   reliably go faster than that), or trigger one immediately from the
+   **Actions** tab → "OKX trading cycle" → **Run workflow**.
+6. Bot state (`backend/data/state.json`, `backend/data/cycles.log`) is
+   committed back to the repo by the workflow after each run — that's how
+   it remembers open positions/cooldowns between runs despite each run
+   starting on a fresh GitHub-hosted machine. You'll see small automated
+   commits from `okx-trading-bot` — that's expected.
+7. Watch it work: **Actions** tab → click a run → "Run one trading cycle"
+   step shows the same output as running `trade:once` locally.
+
+The dashboard (`frontend/`) isn't covered by this — it still needs
+somewhere to run if you want the UI, e.g. Railway below, or just run it
+locally pointed at your OKX account when you want to look.
+
+### Deploying the dashboard/full engine as a service (Railway)
 
 The dashboard API and the trading engine can run as a single process: set
 `ENABLE_SCHEDULER=1` and the Express server (`npm start`) also runs the
