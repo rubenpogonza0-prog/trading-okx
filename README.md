@@ -34,25 +34,65 @@ Open http://localhost:5173.
 cd backend
 npm run trade:dry-run     # one cycle, logs what it *would* do, places no orders
 npm run trade:once        # one cycle, places real orders if a setup qualifies
-npm run trade:scheduler   # runs trade:once every hour, forever — this is the live bot
+npm run trade:scheduler   # repeats trade:once on CYCLE_CRON (default every 10 min), forever
 ```
 
-**`trade:scheduler` is meant to run on infrastructure you control (a VPS,
-a systemd service, pm2, Docker), not inside a Claude Code chat session** —
-this session's sandbox is ephemeral and gets reclaimed after inactivity,
-which is not compatible with unattended real-money trading. Deploy it,
-then walk away and check the dashboard / `backend/data/cycles.log`.
+**This needs to run on infrastructure you control (a VPS, a small always-on
+host, Railway/Render), not inside a Claude Code chat session** — a chat
+session's sandbox is ephemeral and gets reclaimed after inactivity, which
+is not compatible with unattended real-money trading.
 
-Start with `OKX_DEMO=1` in `.env` and a demo-trading API key, run the
-scheduler for at least a few real hourly cycles, and read the logs before
-pointing it at your live account.
+Start with `OKX_DEMO=1` in `.env` and a demo-trading API key, run it for a
+while, and read the logs before pointing it at your live account.
+
+### Deploying (Railway — simplest path with no server to manage)
+
+The dashboard API and the trading engine can run as a single process: set
+`ENABLE_SCHEDULER=1` and the Express server (`npm start`) also runs the
+cron cycle in-process, so one deployed service does both.
+
+1. Create an OKX API key at okx.com → API management: **Trade** permission
+   only, **never Withdraw**. IP-restrict it to Railway's egress if your
+   plan gives you a static IP; otherwise leave unrestricted but keep the
+   key scoped to Trade only.
+2. On [railway.app](https://railway.app), **New Project → Deploy from
+   GitHub repo** → pick `trading-okx`.
+3. In the service settings: **Root Directory** = `backend`, **Start
+   Command** = `npm start` (build/install is automatic from
+   `package.json`).
+4. Add environment variables (Railway → Variables):
+   - `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE`
+   - `OKX_DEMO=1` to start in demo mode (switch to `0` once you trust it)
+   - `ENABLE_SCHEDULER=1`
+   - `CYCLE_CRON=*/10 * * * *` (or another standard cron expression)
+   - `PORT` — Railway injects this automatically, no need to set it
+5. Deploy. Check the Railway logs for `"Startup cycle complete"` — that
+   confirms it can reach OKX and ran a first scan.
+6. `backend/data/` (state + logs) lives on Railway's container filesystem,
+   which is **not persistent across redeploys** by default — attach a
+   [Railway volume](https://docs.railway.app/reference/volumes) mounted at
+   `backend/data` if you want position/cooldown state to survive a
+   redeploy. Without a volume, a redeploy just forgets which positions it
+   opened (OKX itself still has them — only the bot's own bookkeeping,
+   used for the max-5/no-averaging-down/cooldown checks, resets).
+7. Optionally deploy `frontend/` as a second Railway service (or anywhere
+   static, e.g. Vercel/Netlify) pointing its API calls at the backend
+   service's public URL instead of the Vite dev proxy.
+
+A VPS (systemd/pm2 + `npm run trade:scheduler`) works the same way and
+gives you a real persistent filesystem for `backend/data` with no extra
+setup — trade the convenience of Railway against that.
 
 ## Strategy summary
 
 Implements the spec you gave, as literally as OKX's actual market
 structure allows:
 
-- **Universe**: live `*-USDT-SWAP` instruments, stablecoin bases excluded,
+- **Universe**: live `*-USDT-SWAP` instruments, restricted to an allowlist
+  of actual cryptocurrencies (OKX also lists USDT-margined perpetuals on
+  tokenized gold, oil, leveraged ETFs and individual stocks with identical
+  instrument metadata — nothing structural distinguishes them from real
+  crypto contracts, so they're excluded by name), stablecoins excluded,
   filtered by 24h quote volume (liquidity) and bid/ask spread, top 20 by
   24h volume. *OKX has no market-cap field* — 24h volume is used as the
   proxy the spec's "top 20 by market cap" maps to on this exchange.

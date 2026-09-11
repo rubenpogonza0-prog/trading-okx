@@ -6,6 +6,7 @@ import { balanceRouter } from "./routes/balance.js";
 import { positionsRouter } from "./routes/positions.js";
 import { ordersRouter } from "./routes/orders.js";
 import { tradingRouter } from "./routes/trading.js";
+import { startScheduler } from "./trading/scheduler.js";
 
 const app = express();
 // This backend can place real orders (via /api/trading/run-cycle), so CORS is
@@ -33,3 +34,11 @@ const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`OKX dashboard backend listening on http://localhost:${port}`);
 });
+
+// Set ENABLE_SCHEDULER=1 to run the autonomous trading cycle in this same
+// process (real orders, on the CYCLE_CRON schedule) alongside the dashboard
+// API — the simplest single-service deployment (e.g. one Railway service).
+// Leave unset for a read-only dashboard-only deployment.
+if (process.env.ENABLE_SCHEDULER === "1") {
+  startScheduler();
+}
