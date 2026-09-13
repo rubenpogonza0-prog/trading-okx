@@ -38,7 +38,7 @@ jobs:
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
           OKX_DEMO: ${{ vars.OKX_DEMO || '0' }}
-          NEWS_FILTER_ENABLED: ${{ vars.NEWS_FILTER_ENABLED || '0' }}
+          NEWS_FILTER_ENABLED: ${{ vars.NEWS_FILTER_ENABLED || '1' }}
         run: npm run trade:once
 
       - name: Persist bot state (positions/cooldowns) and logs
