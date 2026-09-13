@@ -93,6 +93,7 @@ cron cycle in-process, so one deployed service does both.
    - `OKX_DEMO=1` to start in demo mode (switch to `0` once you trust it)
    - `ENABLE_SCHEDULER=1`
    - `CYCLE_CRON=*/10 * * * *` (or another standard cron expression)
+   - `NEWS_FILTER_ENABLED=1` (recommended — see the news filter note below)
    - `PORT` — Railway injects this automatically, no need to set it
 5. Deploy. Check the Railway logs for `"Startup cycle complete"` — that
    confirms it can reach OKX and ran a first scan.
@@ -156,11 +157,14 @@ Strategy Engine" panel.
 - **This places real leveraged orders with no per-trade confirmation.**
   You asked for full autonomy; nothing here asks you before opening a
   position. Losses are real and can happen while you're not watching.
-- **News/fundamental filter is a documented no-op by default**
-  (`backend/src/trading/newsFilter.js`). No news API key is configured, so
-  the spec's "check for major news before entering" is *not* actually
-  enforced unless you wire a provider in and set `NEWS_FILTER_ENABLED=1`.
-  Until then, check headlines yourself for anything the bot opens.
+- **News/fundamental filter** (`backend/src/trading/newsFilter.js`) checks
+  public RSS feeds (CoinDesk, CoinTelegraph, Decrypt) for market-wide
+  keywords (hack, lawsuit, delisting, rate decisions, …) and asset-specific
+  headlines in the last 6h before entering — no API key needed, on by
+  default (`NEWS_FILTER_ENABLED=1`). It's headline keyword matching, not a
+  sentiment model: it catches "there's breaking news right now", not subtle
+  narrative shifts, and a dead feed fails open (logged, not blocking) rather
+  than freezing the bot.
 - **SL vs. TP inference on closed positions is best-effort.** OKX reports
   algo-order fills separately from the position record; the cooldown logic
   infers "was this a stop-loss?" by comparing the closing price to the

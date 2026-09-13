@@ -76,7 +76,7 @@ export async function runCycle({ dryRun = false } = {}) {
   const universe = await selectUniverse(okx);
 
   for (const candidate of universe) {
-    const { instId, instrument, last: markPrice } = candidate;
+    const { instId, instrument, baseCcy, last: markPrice } = candidate;
 
     const allowed = checkEntryAllowed({ instId, state, nowMs: now });
     if (!allowed.allowed) {
@@ -101,7 +101,7 @@ export async function runCycle({ dryRun = false } = {}) {
       continue;
     }
 
-    const news = await checkNews({ instId });
+    const news = await checkNews({ instId, baseCcy });
     if (news.blocked) {
       report.skipped.push({ instId, reason: `news filter: ${news.note}` });
       continue;
