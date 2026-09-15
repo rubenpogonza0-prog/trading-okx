@@ -1,7 +1,7 @@
 export const FIXED_MARGIN_USDT = 2;
 export const MAX_LEVERAGE = 3;
 export const MIN_LEVERAGE = 1;
-export const MAX_OPEN_POSITIONS = 5;
+export const MAX_OPEN_POSITIONS = 3;
 // After a stop-loss, require this many closed 1H candles before the same
 // instId is eligible again ("do not reopen immediately after a stop loss
 // unless a new setup has clearly formed").

@@ -59,8 +59,9 @@ to sign up for.
    `OKX_DEMO` = `1` (default if you don't set it — demo mode) or `0` (live)
    once you're ready.
 5. That's it. The workflow runs every 15 minutes (GitHub's scheduler won't
-   reliably go faster than that), or trigger one immediately from the
-   **Actions** tab → "OKX trading cycle" → **Run workflow**.
+   reliably go faster than that, and can lag past it on a low-activity
+   repo), or trigger one immediately from the **Actions** tab → "OKX
+   trading cycle" → **Run workflow**.
 6. Bot state (`backend/data/state.json`, `backend/data/cycles.log`) is
    committed back to the repo by the workflow after each run — that's how
    it remembers open positions/cooldowns between runs despite each run
@@ -114,38 +115,46 @@ setup — trade the convenience of Railway against that.
 
 ## Strategy summary
 
-Implements the spec you gave, as literally as OKX's actual market
-structure allows:
+This is the looser, less-restrictive version of the spec (the bot went a
+while without trading anything under the original stricter rules, so the
+confluence requirements were relaxed on purpose — "no busques una señal
+perfecta"):
 
 - **Universe**: live `*-USDT-SWAP` instruments, restricted to an allowlist
   of actual cryptocurrencies (OKX also lists USDT-margined perpetuals on
   tokenized gold, oil, leveraged ETFs and individual stocks with identical
   instrument metadata — nothing structural distinguishes them from real
   crypto contracts, so they're excluded by name), stablecoins excluded,
-  filtered by 24h quote volume (liquidity) and bid/ask spread, top 20 by
-  24h volume. *OKX has no market-cap field* — 24h volume is used as the
-  proxy the spec's "top 20 by market cap" maps to on this exchange.
-- **Bias (1H)**: EMA20/50/200 stack + close position, RSI, MACD histogram,
-  ADX(14) > 18, volume vs 20-period average, price still respecting the
-  nearest 12-candle swing high/low (not the trend's starting point).
-- **Entry (30M)**: breakout of the nearest swing level with volume
-  confirmation, or a retest of EMA20 holding with momentum turning back in
-  the bias direction.
+  filtered by 24h quote volume (liquidity) and bid/ask spread, top 30 by
+  24h volume. *OKX has no market-cap field* — 24h volume is the proxy used.
+- **Bias (1H)**: the one hard veto is a genuinely directionless market
+  (ADX(14) < 15 — skipped outright, no exceptions). Otherwise it's a
+  majority vote, not a checklist every indicator must pass: of {EMA20 vs
+  EMA50 + price trend, MACD histogram/RSI momentum, EMA50 turning
+  (reversal in progress)}, at least 2 of 3 must agree on a direction.
+  Price action and momentum carry equal weight to trend structure.
+- **Entry (30M)**: breakout of the nearest swing level, trend continuation
+  with accelerating momentum, a retest of EMA20 holding, or a clear
+  rejection off support/resistance — any one of these qualifies. Volume
+  only needs to be "reasonable" (≥ 90% of its 20-period average), not a
+  spike.
 - **Stop-loss**: `max(structure, 1.5×ATR(1H))` beyond entry (whichever is
   further away, i.e. more conservative), capped at 4×ATR(1H); trades whose
-  stop can't be placed sanely are skipped.
+  stop can't be placed sanely are skipped. Never moved further away once
+  set.
 - **Take-profit**: the better of 2×risk or the next 1H structural level,
-  floored at the 1:1.8 minimum — trades below that R:R are skipped.
+  floored at a 1:1.5 minimum — trades below that R:R are skipped.
 - **Position size**: fixed 2 USDT margin, lowest leverage in 1x–3x that
-  reaches the instrument's minimum contract size. **Many top-20 contracts
-  (BTC, ETH, …) require more than 2 USDT of margin even at 3x** — those
-  are skipped with an explicit reason, not force-sized. This is a real
-  OKX constraint, not a bug.
-- **Risk limits**: max 5 bot-managed concurrent positions, no averaging
+  reaches the instrument's minimum contract size. **Some contracts (BTC,
+  ETH, …) require more than 2 USDT of margin even at 3x** — those are
+  skipped with an explicit reason, not force-sized. This is a real OKX
+  constraint, not a bug.
+- **Risk limits**: max 3 bot-managed concurrent positions, no averaging
   down/pyramiding (one position per instrument), 2h cooldown after a
   stop-loss on a symbol before it's eligible again.
 - **Execution**: entry + SL + TP are submitted together in a single order
   via OKX's `attachAlgoOrds`, so a position is never live unprotected.
+- **Scan cadence**: a full cycle every 15 minutes.
 
 Every cycle's decisions (trades and skip reasons) are appended to
 `backend/data/state.json` (open bot positions) and `backend/data/cycles.log`

@@ -34,7 +34,7 @@ const CRYPTO_ALLOWLIST = new Set([
 ]);
 
 const DEFAULTS = {
-  topN: 20,
+  topN: 30,
   minQuoteVolume24h: 5_000_000, // USDT — liquidity floor
   maxSpreadPct: 0.15, // percent of mid price — abnormal-spread guard
 };

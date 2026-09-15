@@ -1,7 +1,12 @@
 import { ema, rsi, macd, atr, adx, recentSwing, sma } from "./indicators.js";
 
-const MIN_RR = 1.8;
+const MIN_RR = 1.5;
 const PREFERRED_RR = 2.0;
+// Below this ADX(14,1H), price is treated as directionless/ranging and
+// skipped outright — the one hard "don't trade" rule the looser prompt
+// still asks for. Everything else is evaluated as a majority of signals,
+// not a strict AND of all of them.
+const ADX_RANGEBOUND_MAX = 15;
 
 function last(arr) {
   return arr[arr.length - 1];
@@ -51,49 +56,42 @@ function compute1h(candles) {
 }
 
 function bias1h(m) {
-  if ([m.ema20, m.ema50, m.ema200, m.rsi, m.macdHist, m.adx, m.atr].some((v) => v === undefined)) {
+  if ([m.ema20, m.ema50, m.rsi, m.macdHist, m.adx, m.atr].some((v) => v === undefined)) {
     return { direction: null, reason: "insufficient 1H history for indicators" };
   }
 
-  const trendUp = m.ema20 > m.ema50 && m.ema50 > m.ema200 && m.close > m.ema20;
-  const trendDown = m.ema20 < m.ema50 && m.ema50 < m.ema200 && m.close < m.ema20;
-  // A reversal in progress: price now trading above/below EMA50 (the
-  // crossover already happened — not necessarily on this exact candle,
-  // which would miss the whole move after the first bar) AND EMA50 itself
-  // has turned, confirming it's an actual shift in medium-term direction
-  // rather than a single noisy poke through the line.
-  const reversalUp =
-    m.close > m.ema50 &&
-    m.ema50_5ago !== undefined &&
-    m.ema50 > m.ema50_5ago &&
-    m.rsi > 50 &&
-    m.macdHist > 0;
-  const reversalDown =
-    m.close < m.ema50 &&
-    m.ema50_5ago !== undefined &&
-    m.ema50 < m.ema50_5ago &&
-    m.rsi < 50 &&
-    m.macdHist < 0;
-
-  const momentumUp = m.macdHist > 0 && m.rsi > 50 && m.rsi < 80;
-  const momentumDown = m.macdHist < 0 && m.rsi < 50 && m.rsi > 20;
-  const trendStrengthOk = m.adx > 18;
-  const volumeOk = m.volSma20 !== undefined && m.volume > m.volSma20;
-
-  // "Respecting support/resistance" is about the nearest pullback level, not
-  // the trend's starting point — use the short-lookback swing here.
-  const structureOkLong =
-    m.supportNear !== undefined && m.close - m.supportNear < 3 * m.atr;
-  const structureOkShort =
-    m.resistanceNear !== undefined && m.resistanceNear - m.close < 3 * m.atr;
-
-  if ((trendUp || reversalUp) && momentumUp && trendStrengthOk && volumeOk && structureOkLong) {
-    return { direction: "long", reason: trendUp ? "1H uptrend (EMA20>50>200)" : "1H bullish reversal confirmed" };
+  // The one hard veto: a genuinely directionless/ranging market. Everything
+  // else below is "does price action + momentum lean one way", not a strict
+  // checklist every indicator must pass.
+  if (m.adx < ADX_RANGEBOUND_MAX) {
+    return {
+      direction: null,
+      reason: `sideways/rangebound market (ADX ${m.adx.toFixed(1)} < ${ADX_RANGEBOUND_MAX}) — no trade`,
+    };
   }
-  if ((trendDown || reversalDown) && momentumDown && trendStrengthOk && volumeOk && structureOkShort) {
-    return { direction: "short", reason: trendDown ? "1H downtrend (EMA20<50<200)" : "1H bearish reversal confirmed" };
+
+  const trendUp = m.ema20 > m.ema50 && m.close > m.ema20;
+  const trendDown = m.ema20 < m.ema50 && m.close < m.ema20;
+  const momentumUp = m.macdHist > 0 || m.rsi > 55;
+  const momentumDown = m.macdHist < 0 || m.rsi < 45;
+  // EMA50 itself turning (not just a single-candle poke across it) —
+  // catches a reversal already in progress, not only the exact crossover bar.
+  const reversalUp = m.ema50_5ago !== undefined && m.ema50 > m.ema50_5ago && m.close > m.ema50;
+  const reversalDown = m.ema50_5ago !== undefined && m.ema50 < m.ema50_5ago && m.close < m.ema50;
+
+  const longSignals = [trendUp, momentumUp, reversalUp].filter(Boolean).length;
+  const shortSignals = [trendDown, momentumDown, reversalDown].filter(Boolean).length;
+
+  // Majority vote (2 of 3), not unanimous — "no es necesario que todos los
+  // indicadores coincidan". Price action/momentum carry the same weight as
+  // trend structure rather than requiring EMA stack + ADX + volume all at once.
+  if (longSignals >= 2 && longSignals > shortSignals) {
+    return { direction: "long", reason: `1H bullish bias (${longSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
   }
-  return { direction: null, reason: "1H conditions conflict or insufficient confluence" };
+  if (shortSignals >= 2 && shortSignals > longSignals) {
+    return { direction: "short", reason: `1H bearish bias (${shortSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
+  }
+  return { direction: null, reason: "1H signals mixed — no clear directional bias" };
 }
 
 function compute30m(candles) {
@@ -109,6 +107,7 @@ function compute30m(candles) {
   const i = closes.length - 1;
   return {
     close: closes[i],
+    open: candles[i].open,
     high: candles[i].high,
     low: candles[i].low,
     ema20: ema20[i],
@@ -128,27 +127,47 @@ function entryTrigger30m(m, direction) {
   if ([m.ema20, m.rsi, m.macdHist, m.atr, m.volSma20].some((v) => v === undefined)) {
     return { ok: false, reason: "insufficient 30M history for indicators" };
   }
-  const volConfirmed = m.volume > m.volSma20 * 1.2;
+  // "Volumen razonable", not a spike requirement — just rule out a dead/illiquid
+  // moment rather than demanding above-average volume on every entry.
+  const volReasonable = m.volSma20 === 0 || m.volume >= m.volSma20 * 0.9;
+  const accelUp = m.macdHistPrev !== undefined && m.macdHist > m.macdHistPrev && m.macdHist > 0;
+  const accelDown = m.macdHistPrev !== undefined && m.macdHist < m.macdHistPrev && m.macdHist < 0;
 
   if (direction === "long") {
-    const breakout = m.resistance !== undefined && m.close > m.resistance && volConfirmed;
+    const breakout = m.resistance !== undefined && m.close > m.resistance && volReasonable;
+    const continuation = m.close > m.ema20 && accelUp && volReasonable;
     const retest =
       m.close > m.ema20 &&
       m.low <= m.ema20 + 0.5 * m.atr &&
       (m.macdHist > m.macdHistPrev || (m.rsiPrev <= 50 && m.rsi > 50));
-    if (breakout) return { ok: true, reason: "30M breakout above resistance with volume confirmation" };
+    const rejection =
+      m.support !== undefined &&
+      m.low <= m.support + 0.3 * m.atr &&
+      m.close > m.support + 0.3 * m.atr &&
+      m.close > m.open;
+    if (breakout) return { ok: true, reason: "30M breakout above resistance" };
+    if (continuation) return { ok: true, reason: "30M trend continuation, momentum accelerating" };
     if (retest) return { ok: true, reason: "30M retest of EMA20/support holding with momentum turning up" };
+    if (rejection) return { ok: true, reason: "30M clear rejection off support" };
     return { ok: false, reason: "no valid 30M long trigger" };
   }
 
   if (direction === "short") {
-    const breakdown = m.support !== undefined && m.close < m.support && volConfirmed;
+    const breakdown = m.support !== undefined && m.close < m.support && volReasonable;
+    const continuation = m.close < m.ema20 && accelDown && volReasonable;
     const retest =
       m.close < m.ema20 &&
       m.high >= m.ema20 - 0.5 * m.atr &&
       (m.macdHist < m.macdHistPrev || (m.rsiPrev >= 50 && m.rsi < 50));
-    if (breakdown) return { ok: true, reason: "30M breakdown below support with volume confirmation" };
+    const rejection =
+      m.resistance !== undefined &&
+      m.high >= m.resistance - 0.3 * m.atr &&
+      m.close < m.resistance - 0.3 * m.atr &&
+      m.close < m.open;
+    if (breakdown) return { ok: true, reason: "30M breakdown below support" };
+    if (continuation) return { ok: true, reason: "30M trend continuation, momentum accelerating" };
     if (retest) return { ok: true, reason: "30M retest of EMA20/resistance holding with momentum turning down" };
+    if (rejection) return { ok: true, reason: "30M clear rejection off resistance" };
     return { ok: false, reason: "no valid 30M short trigger" };
   }
 

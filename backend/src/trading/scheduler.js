@@ -1,12 +1,11 @@
 import cron from "node-cron";
 import { runCycle } from "./runCycle.js";
 
-// How often to scan and, if a setup qualifies, trade. The original spec
-// asked for hourly; this defaults to every 10 minutes so entries aren't
-// missed waiting for a full hourly tick — the underlying 1H/30M indicators
-// still only change on candle close, but the live (forming) candle's price
-// is re-evaluated every run, so a breakout is caught close to when it happens.
-const DEFAULT_CRON = "*/10 * * * *";
+// How often to scan and, if a setup qualifies, trade. The underlying 1H/30M
+// indicators still only change on candle close, but the live (forming)
+// candle's price is re-evaluated every run, so a breakout is caught close
+// to when it happens.
+const DEFAULT_CRON = "*/15 * * * *";
 
 export function startScheduler({ cronExpr = process.env.CYCLE_CRON || DEFAULT_CRON } = {}) {
   console.log(`OKX trading scheduler started — cron "${cronExpr}".`);
