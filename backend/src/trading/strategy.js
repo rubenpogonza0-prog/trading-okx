@@ -1,21 +1,19 @@
 import { ema, rsi, macd, atr, adx, recentSwing, sma } from "./indicators.js";
 
-const MIN_RR = 1.5;
-const PREFERRED_RR = 2.0;
-// Below this ADX(14,1H), price is treated as directionless/ranging and
-// skipped outright — the one hard "don't trade" rule the looser prompt
-// still asks for. Everything else is evaluated as a majority of signals,
-// not a strict AND of all of them.
-const ADX_RANGEBOUND_MAX = 15;
+// Scalping profile: bias on 15m, entry trigger on 5m. Both loosened
+// relative to the original 1H/30M swing profile so the bot finds many more
+// setups per cycle — the whole point of "mass scalping" — at the cost of
+// each individual setup being lower-conviction. Stops/targets are tighter
+// (smaller ATR multiples) to match: scalps aim to be in and out fast, not
+// ride a multi-hour trend.
+const MIN_RR = 1.3;
+const PREFERRED_RR = 1.6;
+// Below this ADX(14,15m), price is directionless/ranging and skipped
+// outright. Lower than the swing profile's 15 — scalps don't need a strong
+// trend, just enough directional lean to not be pure noise.
+const ADX_RANGEBOUND_MAX = 12;
 
-function last(arr) {
-  return arr[arr.length - 1];
-}
-function at(arr, i) {
-  return arr[arr.length - 1 + i]; // i is negative offset from the end, e.g. -1 = previous
-}
-
-function compute1h(candles) {
+function compute15m(candles) {
   const closes = candles.map((c) => c.close);
   const volumes = candles.map((c) => c.volume);
   const ema20 = ema(closes, 20);
@@ -28,9 +26,7 @@ function compute1h(candles) {
   const volSma20 = sma(volumes, 20);
   // Long lookback: broad structural level, used as a take-profit target.
   const swing = recentSwing(candles, 50);
-  // Short lookback: the nearest pullback level, used to check price is
-  // still "respecting" support/resistance rather than the trend's origin
-  // (a 50-candle swing low is always far away deep into a sustained trend).
+  // Short lookback: the nearest pullback level.
   const swingNear = recentSwing(candles, 12);
 
   const i = closes.length - 1;
@@ -55,14 +51,12 @@ function compute1h(candles) {
   };
 }
 
-function bias1h(m) {
+function bias15m(m) {
   if ([m.ema20, m.ema50, m.rsi, m.macdHist, m.adx, m.atr].some((v) => v === undefined)) {
-    return { direction: null, reason: "insufficient 1H history for indicators" };
+    return { direction: null, reason: "insufficient 15m history for indicators" };
   }
 
-  // The one hard veto: a genuinely directionless/ranging market. Everything
-  // else below is "does price action + momentum lean one way", not a strict
-  // checklist every indicator must pass.
+  // The one hard veto: a genuinely directionless/ranging market.
   if (m.adx < ADX_RANGEBOUND_MAX) {
     return {
       direction: null,
@@ -72,29 +66,26 @@ function bias1h(m) {
 
   const trendUp = m.ema20 > m.ema50 && m.close > m.ema20;
   const trendDown = m.ema20 < m.ema50 && m.close < m.ema20;
-  const momentumUp = m.macdHist > 0 || m.rsi > 55;
-  const momentumDown = m.macdHist < 0 || m.rsi < 45;
-  // EMA50 itself turning (not just a single-candle poke across it) —
-  // catches a reversal already in progress, not only the exact crossover bar.
+  // Loosened vs. the swing profile (was 55/45) — scalps ride weaker momentum.
+  const momentumUp = m.macdHist > 0 || m.rsi > 52;
+  const momentumDown = m.macdHist < 0 || m.rsi < 48;
   const reversalUp = m.ema50_5ago !== undefined && m.ema50 > m.ema50_5ago && m.close > m.ema50;
   const reversalDown = m.ema50_5ago !== undefined && m.ema50 < m.ema50_5ago && m.close < m.ema50;
 
   const longSignals = [trendUp, momentumUp, reversalUp].filter(Boolean).length;
   const shortSignals = [trendDown, momentumDown, reversalDown].filter(Boolean).length;
 
-  // Majority vote (2 of 3), not unanimous — "no es necesario que todos los
-  // indicadores coincidan". Price action/momentum carry the same weight as
-  // trend structure rather than requiring EMA stack + ADX + volume all at once.
+  // Majority vote (2 of 3), not unanimous.
   if (longSignals >= 2 && longSignals > shortSignals) {
-    return { direction: "long", reason: `1H bullish bias (${longSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
+    return { direction: "long", reason: `15m bullish bias (${longSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
   }
   if (shortSignals >= 2 && shortSignals > longSignals) {
-    return { direction: "short", reason: `1H bearish bias (${shortSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
+    return { direction: "short", reason: `15m bearish bias (${shortSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
   }
-  return { direction: null, reason: "1H signals mixed — no clear directional bias" };
+  return { direction: null, reason: "15m signals mixed — no clear directional bias" };
 }
 
-function compute30m(candles) {
+function compute5m(candles) {
   const closes = candles.map((c) => c.close);
   const volumes = candles.map((c) => c.volume);
   const ema20 = ema(closes, 20);
@@ -123,13 +114,12 @@ function compute30m(candles) {
   };
 }
 
-function entryTrigger30m(m, direction) {
+function entryTrigger5m(m, direction) {
   if ([m.ema20, m.rsi, m.macdHist, m.atr, m.volSma20].some((v) => v === undefined)) {
-    return { ok: false, reason: "insufficient 30M history for indicators" };
+    return { ok: false, reason: "insufficient 5m history for indicators" };
   }
-  // "Volumen razonable", not a spike requirement — just rule out a dead/illiquid
-  // moment rather than demanding above-average volume on every entry.
-  const volReasonable = m.volSma20 === 0 || m.volume >= m.volSma20 * 0.9;
+  // Loosened vs. the swing profile's 0.9x — just rule out a dead moment.
+  const volReasonable = m.volSma20 === 0 || m.volume >= m.volSma20 * 0.75;
   const accelUp = m.macdHistPrev !== undefined && m.macdHist > m.macdHistPrev && m.macdHist > 0;
   const accelDown = m.macdHistPrev !== undefined && m.macdHist < m.macdHistPrev && m.macdHist < 0;
 
@@ -145,11 +135,11 @@ function entryTrigger30m(m, direction) {
       m.low <= m.support + 0.3 * m.atr &&
       m.close > m.support + 0.3 * m.atr &&
       m.close > m.open;
-    if (breakout) return { ok: true, reason: "30M breakout above resistance" };
-    if (continuation) return { ok: true, reason: "30M trend continuation, momentum accelerating" };
-    if (retest) return { ok: true, reason: "30M retest of EMA20/support holding with momentum turning up" };
-    if (rejection) return { ok: true, reason: "30M clear rejection off support" };
-    return { ok: false, reason: "no valid 30M long trigger" };
+    if (breakout) return { ok: true, reason: "5m breakout above resistance" };
+    if (continuation) return { ok: true, reason: "5m trend continuation, momentum accelerating" };
+    if (retest) return { ok: true, reason: "5m retest of EMA20/support holding with momentum turning up" };
+    if (rejection) return { ok: true, reason: "5m clear rejection off support" };
+    return { ok: false, reason: "no valid 5m long trigger" };
   }
 
   if (direction === "short") {
@@ -164,39 +154,42 @@ function entryTrigger30m(m, direction) {
       m.high >= m.resistance - 0.3 * m.atr &&
       m.close < m.resistance - 0.3 * m.atr &&
       m.close < m.open;
-    if (breakdown) return { ok: true, reason: "30M breakdown below support" };
-    if (continuation) return { ok: true, reason: "30M trend continuation, momentum accelerating" };
-    if (retest) return { ok: true, reason: "30M retest of EMA20/resistance holding with momentum turning down" };
-    if (rejection) return { ok: true, reason: "30M clear rejection off resistance" };
-    return { ok: false, reason: "no valid 30M short trigger" };
+    if (breakdown) return { ok: true, reason: "5m breakdown below support" };
+    if (continuation) return { ok: true, reason: "5m trend continuation, momentum accelerating" };
+    if (retest) return { ok: true, reason: "5m retest of EMA20/resistance holding with momentum turning down" };
+    if (rejection) return { ok: true, reason: "5m clear rejection off resistance" };
+    return { ok: false, reason: "no valid 5m short trigger" };
   }
 
   return { ok: false, reason: "no direction" };
 }
 
-function buildTradePlan(direction, entry, m1h, m30) {
-  const atr1h = m1h.atr;
-  const atr30 = m30.atr;
+function buildTradePlan(direction, entry, m15, m5) {
+  const atr15 = m15.atr;
+  const atr5 = m5.atr;
 
   let slPrice, slBasisNote;
   if (direction === "long") {
-    const structural = (m30.support ?? m1h.support) - 0.25 * atr30;
-    const atrBased = entry - 1.5 * atr1h;
+    const structural = (m5.support ?? m15.support) - 0.2 * atr5;
+    // Tighter than the swing profile's 1.5x — scalps use a quick stop.
+    const atrBased = entry - 1.0 * atr15;
     slPrice = Math.min(structural, atrBased);
-    slBasisNote = structural < atrBased ? "structure (30M support)" : "1.5x ATR(1H)";
+    slBasisNote = structural < atrBased ? "structure (5m support)" : "1.0x ATR(15m)";
   } else {
-    const structural = (m30.resistance ?? m1h.resistance) + 0.25 * atr30;
-    const atrBased = entry + 1.5 * atr1h;
+    const structural = (m5.resistance ?? m15.resistance) + 0.2 * atr5;
+    const atrBased = entry + 1.0 * atr15;
     slPrice = Math.max(structural, atrBased);
-    slBasisNote = structural > atrBased ? "structure (30M resistance)" : "1.5x ATR(1H)";
+    slBasisNote = structural > atrBased ? "structure (5m resistance)" : "1.0x ATR(15m)";
   }
 
   const slDistance = direction === "long" ? entry - slPrice : slPrice - entry;
-  if (!(slDistance > 0) || slDistance > 4 * atr1h) {
+  // Cap tighter than the swing profile's 4x — a scalp whose stop needs to
+  // be this wide isn't a scalp anymore, skip it.
+  if (!(slDistance > 0) || slDistance > 2.5 * atr15) {
     return { valid: false, reason: "stop-loss distance invalid or unreasonably wide" };
   }
 
-  const structuralTarget = direction === "long" ? m1h.resistance : m1h.support;
+  const structuralTarget = direction === "long" ? m15.resistance : m15.support;
   let tpPrice = direction === "long" ? entry + PREFERRED_RR * slDistance : entry - PREFERRED_RR * slDistance;
   if (structuralTarget !== undefined) {
     if (direction === "long" && structuralTarget > entry) {
@@ -222,30 +215,30 @@ function buildTradePlan(direction, entry, m1h, m30) {
   };
 }
 
-// Evaluates a single symbol. `candles1h`/`candles30m` are oldest-first
+// Evaluates a single symbol. `candles15m`/`candles5m` are oldest-first
 // candle arrays from marketData.getCandles. Returns either a valid signal
 // plan or a structured rejection reason (never throws for "no trade").
-export function evaluateSymbol({ instId, candles1h, candles30m }) {
-  if (candles1h.length < 210 || candles30m.length < 40) {
+export function evaluateSymbol({ instId, candles15m, candles5m }) {
+  if (candles15m.length < 210 || candles5m.length < 40) {
     return { instId, signal: null, reason: "insufficient candle history" };
   }
 
-  const m1h = compute1h(candles1h);
-  const bias = bias1h(m1h);
+  const m15 = compute15m(candles15m);
+  const bias = bias15m(m15);
   if (!bias.direction) {
-    return { instId, signal: null, reason: bias.reason, m1h };
+    return { instId, signal: null, reason: bias.reason, m15 };
   }
 
-  const m30 = compute30m(candles30m);
-  const trigger = entryTrigger30m(m30, bias.direction);
+  const m5 = compute5m(candles5m);
+  const trigger = entryTrigger5m(m5, bias.direction);
   if (!trigger.ok) {
-    return { instId, signal: null, reason: `1H bias ${bias.direction} (${bias.reason}) but ${trigger.reason}`, m1h, m30 };
+    return { instId, signal: null, reason: `15m bias ${bias.direction} (${bias.reason}) but ${trigger.reason}`, m15, m5 };
   }
 
-  const entry = m30.close;
-  const plan = buildTradePlan(bias.direction, entry, m1h, m30);
+  const entry = m5.close;
+  const plan = buildTradePlan(bias.direction, entry, m15, m5);
   if (!plan.valid) {
-    return { instId, signal: null, reason: plan.reason, m1h, m30 };
+    return { instId, signal: null, reason: plan.reason, m15, m5 };
   }
 
   return {
@@ -256,7 +249,7 @@ export function evaluateSymbol({ instId, candles1h, candles30m }) {
     tp: plan.tp,
     rr: plan.rr,
     reasons: [bias.reason, trigger.reason, `SL basis: ${plan.slBasisNote}`],
-    m1h,
-    m30,
+    m15,
+    m5,
   };
 }

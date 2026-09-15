@@ -84,18 +84,18 @@ export async function runCycle({ dryRun = false } = {}) {
       continue;
     }
 
-    let candles1h, candles30m;
+    let candles15m, candles5m;
     try {
-      [candles1h, candles30m] = await Promise.all([
-        getCandles(okx, instId, "1H", 300),
-        getCandles(okx, instId, "30m", 100),
+      [candles15m, candles5m] = await Promise.all([
+        getCandles(okx, instId, "15m", 300),
+        getCandles(okx, instId, "5m", 100),
       ]);
     } catch (err) {
       report.skipped.push({ instId, reason: `candle fetch failed: ${err.message}` });
       continue;
     }
 
-    const evaluation = evaluateSymbol({ instId, candles1h, candles30m });
+    const evaluation = evaluateSymbol({ instId, candles15m, candles5m });
     if (!evaluation.signal) {
       report.skipped.push({ instId, reason: evaluation.reason });
       continue;

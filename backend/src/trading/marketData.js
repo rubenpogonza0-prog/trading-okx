@@ -8,7 +8,7 @@ export async function getSwapTickers(okx) {
   return okx.get("/api/v5/market/tickers", { instType: "SWAP" });
 }
 
-// bar: "1H" or "30m". OKX returns candles newest-first, with the very
+// bar: e.g. "15m" or "5m". OKX returns candles newest-first, with the very
 // first entry usually being the still-forming current bar (confirm="0").
 // We reverse to oldest-first and drop any trailing unconfirmed bar: its
 // volume is a partial-period count, not comparable to a full-period
