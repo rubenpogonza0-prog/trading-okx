@@ -1,42 +1,36 @@
 import { ema, rsi, macd, atr, adx, recentSwing, sma } from "./indicators.js";
 
-// Scalping profile: bias on 15m, entry trigger on 5m. Both loosened
-// relative to the original 1H/30M swing profile so the bot finds many more
-// setups per cycle — the whole point of "mass scalping" — at the cost of
-// each individual setup being lower-conviction. Stops/targets are tighter
-// (smaller ATR multiples) to match: scalps aim to be in and out fast, not
-// ride a multi-hour trend.
-const MIN_RR = 1.3;
-const PREFERRED_RR = 1.6;
-// Below this ADX(14,15m), price is directionless/ranging and skipped
-// outright. Lower than the swing profile's 15 — scalps don't need a strong
-// trend, just enough directional lean to not be pure noise.
-const ADX_RANGEBOUND_MAX = 12;
+// Active scalping setup per spec: 1H sets the main trend (EMA200 side), 5M
+// times entry and sizes SL/TP off ATR(14,5M). Two earlier, stricter
+// versions of this strategy went long stretches — and in one manual
+// backtest, ~2 trades in a year — without qualifying a single trade, so
+// this cuts confirmation requirements down to what the spec asks for:
+// trend direction + "not a dead range", nothing more. Every trade still
+// gets a real SL and TP attached at entry.
+const SL_ATR_MULT = 1.5;
+const TP_ATR_MULT = 3;
+const MIN_RR_SANITY = 1.2; // floor only to catch degenerate structural clamps, not a target
+// Below this ADX(14,1H), price is treated as directionless/ranging and
+// skipped outright — the "no operar en rango lateral" rule.
+const ADX_RANGEBOUND_MAX = 15;
+// A bot position open this long with neither SL nor TP hit and momentum
+// gone is a scalp that stopped working — see shouldCloseStale() below.
+export const STALE_POSITION_HOURS = 2;
 
-function compute15m(candles) {
+function computeBias(candles) {
   const closes = candles.map((c) => c.close);
   const volumes = candles.map((c) => c.volume);
-  const ema20 = ema(closes, 20);
-  const ema50 = ema(closes, 50);
   const ema200 = ema(closes, 200);
   const rsi14 = rsi(closes, 14);
   const { histogram } = macd(closes);
   const { adx: adxLine } = adx(candles, 14);
   const atr14 = atr(candles, 14);
   const volSma20 = sma(volumes, 20);
-  // Long lookback: broad structural level, used as a take-profit target.
   const swing = recentSwing(candles, 50);
-  // Short lookback: the nearest pullback level.
-  const swingNear = recentSwing(candles, 12);
 
   const i = closes.length - 1;
   return {
     close: closes[i],
-    closePrev: closes[i - 1],
-    ema20: ema20[i],
-    ema50: ema50[i],
-    ema50Prev: ema50[i - 1],
-    ema50_5ago: ema50[i - 5],
     ema200: ema200[i],
     rsi: rsi14[i],
     macdHist: histogram[i],
@@ -46,17 +40,17 @@ function compute15m(candles) {
     volSma20: volSma20[i],
     support: swing.support,
     resistance: swing.resistance,
-    supportNear: swingNear.support,
-    resistanceNear: swingNear.resistance,
   };
 }
 
-function bias15m(m) {
-  if ([m.ema20, m.ema50, m.rsi, m.macdHist, m.adx, m.atr].some((v) => v === undefined)) {
-    return { direction: null, reason: "insufficient 15m history for indicators" };
+// Trend side is decided purely by price vs EMA200 on 1H, per spec — the one
+// thing that must hold. ADX below the rangebound floor is the one veto.
+// Momentum/volume are read on the entry timeframe instead of gating bias.
+function biasDirection(m) {
+  if ([m.ema200, m.adx].some((v) => v === undefined)) {
+    return { direction: null, reason: "insufficient 1H history for indicators" };
   }
 
-  // The one hard veto: a genuinely directionless/ranging market.
   if (m.adx < ADX_RANGEBOUND_MAX) {
     return {
       direction: null,
@@ -64,28 +58,16 @@ function bias15m(m) {
     };
   }
 
-  const trendUp = m.ema20 > m.ema50 && m.close > m.ema20;
-  const trendDown = m.ema20 < m.ema50 && m.close < m.ema20;
-  // Loosened vs. the swing profile (was 55/45) — scalps ride weaker momentum.
-  const momentumUp = m.macdHist > 0 || m.rsi > 52;
-  const momentumDown = m.macdHist < 0 || m.rsi < 48;
-  const reversalUp = m.ema50_5ago !== undefined && m.ema50 > m.ema50_5ago && m.close > m.ema50;
-  const reversalDown = m.ema50_5ago !== undefined && m.ema50 < m.ema50_5ago && m.close < m.ema50;
-
-  const longSignals = [trendUp, momentumUp, reversalUp].filter(Boolean).length;
-  const shortSignals = [trendDown, momentumDown, reversalDown].filter(Boolean).length;
-
-  // Majority vote (2 of 3), not unanimous.
-  if (longSignals >= 2 && longSignals > shortSignals) {
-    return { direction: "long", reason: `15m bullish bias (${longSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
+  if (m.close > m.ema200) {
+    return { direction: "long", reason: `1H trend up (price above EMA200, ADX ${m.adx.toFixed(1)})` };
   }
-  if (shortSignals >= 2 && shortSignals > longSignals) {
-    return { direction: "short", reason: `15m bearish bias (${shortSignals}/3 signals, ADX ${m.adx.toFixed(1)})` };
+  if (m.close < m.ema200) {
+    return { direction: "short", reason: `1H trend down (price below EMA200, ADX ${m.adx.toFixed(1)})` };
   }
-  return { direction: null, reason: "15m signals mixed — no clear directional bias" };
+  return { direction: null, reason: "1H price sitting exactly on EMA200 — no clear trend side" };
 }
 
-function compute5m(candles) {
+function computeEntry(candles) {
   const closes = candles.map((c) => c.close);
   const volumes = candles.map((c) => c.volume);
   const ema20 = ema(closes, 20);
@@ -114,18 +96,24 @@ function compute5m(candles) {
   };
 }
 
-function entryTrigger5m(m, direction) {
+// Fires on any one of: a MACD histogram crossover, a breakout, accelerating
+// momentum continuation, an EMA20 retest, a rejection off support/
+// resistance, or — the broadest — price simply still trading on the bias
+// side of EMA20 with momentum not opposing it. "No esperes una señal
+// perfecta": any single one of these is enough, they aren't ANDed together.
+function entryTrigger(m, direction) {
   if ([m.ema20, m.rsi, m.macdHist, m.atr, m.volSma20].some((v) => v === undefined)) {
-    return { ok: false, reason: "insufficient 5m history for indicators" };
+    return { ok: false, reason: "insufficient 5M history for indicators" };
   }
-  // Loosened vs. the swing profile's 0.9x — just rule out a dead moment.
-  const volReasonable = m.volSma20 === 0 || m.volume >= m.volSma20 * 0.75;
+  // "Volumen como confirmación", not a hard spike requirement.
+  const volReasonable = m.volSma20 === 0 || m.volume >= m.volSma20 * 0.9;
+  const macdCrossUp = m.macdHistPrev !== undefined && m.macdHistPrev <= 0 && m.macdHist > 0;
+  const macdCrossDown = m.macdHistPrev !== undefined && m.macdHistPrev >= 0 && m.macdHist < 0;
   const accelUp = m.macdHistPrev !== undefined && m.macdHist > m.macdHistPrev && m.macdHist > 0;
   const accelDown = m.macdHistPrev !== undefined && m.macdHist < m.macdHistPrev && m.macdHist < 0;
 
   if (direction === "long") {
     const breakout = m.resistance !== undefined && m.close > m.resistance && volReasonable;
-    const continuation = m.close > m.ema20 && accelUp && volReasonable;
     const retest =
       m.close > m.ema20 &&
       m.low <= m.ema20 + 0.5 * m.atr &&
@@ -135,16 +123,18 @@ function entryTrigger5m(m, direction) {
       m.low <= m.support + 0.3 * m.atr &&
       m.close > m.support + 0.3 * m.atr &&
       m.close > m.open;
-    if (breakout) return { ok: true, reason: "5m breakout above resistance" };
-    if (continuation) return { ok: true, reason: "5m trend continuation, momentum accelerating" };
-    if (retest) return { ok: true, reason: "5m retest of EMA20/support holding with momentum turning up" };
-    if (rejection) return { ok: true, reason: "5m clear rejection off support" };
-    return { ok: false, reason: "no valid 5m long trigger" };
+    const trendAligned = m.close > m.ema20 && m.macdHist >= 0 && volReasonable;
+    if (macdCrossUp) return { ok: true, reason: "5M MACD bullish crossover" };
+    if (breakout) return { ok: true, reason: "5M breakout above resistance" };
+    if (accelUp) return { ok: true, reason: "5M momentum continuation, MACD accelerating up" };
+    if (retest) return { ok: true, reason: "5M retest of EMA20/support holding with momentum turning up" };
+    if (rejection) return { ok: true, reason: "5M clear rejection off support" };
+    if (trendAligned) return { ok: true, reason: "5M price action aligned with bias (above EMA20, momentum not opposing)" };
+    return { ok: false, reason: "no valid 5M long trigger" };
   }
 
   if (direction === "short") {
     const breakdown = m.support !== undefined && m.close < m.support && volReasonable;
-    const continuation = m.close < m.ema20 && accelDown && volReasonable;
     const retest =
       m.close < m.ema20 &&
       m.high >= m.ema20 - 0.5 * m.atr &&
@@ -154,91 +144,97 @@ function entryTrigger5m(m, direction) {
       m.high >= m.resistance - 0.3 * m.atr &&
       m.close < m.resistance - 0.3 * m.atr &&
       m.close < m.open;
-    if (breakdown) return { ok: true, reason: "5m breakdown below support" };
-    if (continuation) return { ok: true, reason: "5m trend continuation, momentum accelerating" };
-    if (retest) return { ok: true, reason: "5m retest of EMA20/resistance holding with momentum turning down" };
-    if (rejection) return { ok: true, reason: "5m clear rejection off resistance" };
-    return { ok: false, reason: "no valid 5m short trigger" };
+    const trendAligned = m.close < m.ema20 && m.macdHist <= 0 && volReasonable;
+    if (macdCrossDown) return { ok: true, reason: "5M MACD bearish crossover" };
+    if (breakdown) return { ok: true, reason: "5M breakdown below support" };
+    if (accelDown) return { ok: true, reason: "5M momentum continuation, MACD accelerating down" };
+    if (retest) return { ok: true, reason: "5M retest of EMA20/resistance holding with momentum turning down" };
+    if (rejection) return { ok: true, reason: "5M clear rejection off resistance" };
+    if (trendAligned) return { ok: true, reason: "5M price action aligned with bias (below EMA20, momentum not opposing)" };
+    return { ok: false, reason: "no valid 5M short trigger" };
   }
 
   return { ok: false, reason: "no direction" };
 }
 
-function buildTradePlan(direction, entry, m15, m5) {
-  const atr15 = m15.atr;
-  const atr5 = m5.atr;
+// SL/TP come straight off ATR(14,5M) per spec (1.5x / 3x — a fixed ~1:2
+// plan, not a floor to hit), with a light structural nudge: tighten the SL
+// if a real support/resistance level sits inside the ATR distance, and cap
+// the TP at the next 1H structural level if that's closer than the ATR target.
+function buildTradePlan(direction, entry, mBias, mEntry) {
+  const atrEntry = mEntry.atr;
 
-  let slPrice, slBasisNote;
+  let slPrice = direction === "long" ? entry - SL_ATR_MULT * atrEntry : entry + SL_ATR_MULT * atrEntry;
+  let tpPrice = direction === "long" ? entry + TP_ATR_MULT * atrEntry : entry - TP_ATR_MULT * atrEntry;
+  let slBasisNote = `${SL_ATR_MULT}x ATR(5M)`;
+  let tpBasisNote = `${TP_ATR_MULT}x ATR(5M)`;
+
   if (direction === "long") {
-    const structural = (m5.support ?? m15.support) - 0.2 * atr5;
-    // Tighter than the swing profile's 1.5x — scalps use a quick stop.
-    const atrBased = entry - 1.0 * atr15;
-    slPrice = Math.min(structural, atrBased);
-    slBasisNote = structural < atrBased ? "structure (5m support)" : "1.0x ATR(15m)";
+    const support = mEntry.support ?? mBias.support;
+    if (support !== undefined && support > slPrice && support < entry - 0.3 * atrEntry) {
+      slPrice = support - 0.15 * atrEntry;
+      slBasisNote = "structure (5M/1H support), ATR-adjusted";
+    }
+    const resistance = mBias.resistance;
+    if (resistance !== undefined && resistance > entry && resistance < tpPrice) {
+      tpPrice = resistance * 0.999;
+      tpBasisNote = "next 1H structural resistance (closer than ATR target)";
+    }
   } else {
-    const structural = (m5.resistance ?? m15.resistance) + 0.2 * atr5;
-    const atrBased = entry + 1.0 * atr15;
-    slPrice = Math.max(structural, atrBased);
-    slBasisNote = structural > atrBased ? "structure (5m resistance)" : "1.0x ATR(15m)";
-  }
-
-  const slDistance = direction === "long" ? entry - slPrice : slPrice - entry;
-  // Cap tighter than the swing profile's 4x — a scalp whose stop needs to
-  // be this wide isn't a scalp anymore, skip it.
-  if (!(slDistance > 0) || slDistance > 2.5 * atr15) {
-    return { valid: false, reason: "stop-loss distance invalid or unreasonably wide" };
-  }
-
-  const structuralTarget = direction === "long" ? m15.resistance : m15.support;
-  let tpPrice = direction === "long" ? entry + PREFERRED_RR * slDistance : entry - PREFERRED_RR * slDistance;
-  if (structuralTarget !== undefined) {
-    if (direction === "long" && structuralTarget > entry) {
-      tpPrice = Math.min(tpPrice, structuralTarget * 0.999);
-    } else if (direction === "short" && structuralTarget < entry) {
-      tpPrice = Math.max(tpPrice, structuralTarget * 1.001);
+    const resistance = mEntry.resistance ?? mBias.resistance;
+    if (resistance !== undefined && resistance < slPrice && resistance > entry + 0.3 * atrEntry) {
+      slPrice = resistance + 0.15 * atrEntry;
+      slBasisNote = "structure (5M/1H resistance), ATR-adjusted";
+    }
+    const support = mBias.support;
+    if (support !== undefined && support < entry && support > tpPrice) {
+      tpPrice = support * 1.001;
+      tpBasisNote = "next 1H structural support (closer than ATR target)";
     }
   }
 
+  const slDistance = direction === "long" ? entry - slPrice : slPrice - entry;
+  if (!(slDistance > 0)) {
+    return { valid: false, reason: "stop-loss distance invalid" };
+  }
   const rewardDistance = direction === "long" ? tpPrice - entry : entry - tpPrice;
-  const rr = rewardDistance / slDistance;
-  if (rr < MIN_RR) {
-    return { valid: false, reason: `risk/reward ${rr.toFixed(2)} below minimum ${MIN_RR}` };
+  if (!(rewardDistance > 0)) {
+    return { valid: false, reason: "take-profit distance invalid" };
   }
 
-  return {
-    valid: true,
-    entry,
-    sl: slPrice,
-    tp: tpPrice,
-    rr,
-    slBasisNote,
-  };
+  const rr = rewardDistance / slDistance;
+  if (rr < MIN_RR_SANITY) {
+    return { valid: false, reason: `risk/reward ${rr.toFixed(2)} too low after structural adjustment` };
+  }
+
+  return { valid: true, entry, sl: slPrice, tp: tpPrice, rr, slBasisNote, tpBasisNote };
 }
 
-// Evaluates a single symbol. `candles15m`/`candles5m` are oldest-first
-// candle arrays from marketData.getCandles. Returns either a valid signal
-// plan or a structured rejection reason (never throws for "no trade").
-export function evaluateSymbol({ instId, candles15m, candles5m }) {
-  if (candles15m.length < 210 || candles5m.length < 40) {
+// Evaluates a single symbol. `candlesBias`/`candlesEntry` are oldest-first
+// candle arrays from marketData.getCandles (1H and 5M respectively — see
+// runCycle.js). Returns either a valid signal plan or a structured
+// rejection reason (never throws for "no trade").
+export function evaluateSymbol({ instId, candlesBias, candlesEntry }) {
+  if (candlesBias.length < 210 || candlesEntry.length < 30) {
     return { instId, signal: null, reason: "insufficient candle history" };
   }
 
-  const m15 = compute15m(candles15m);
-  const bias = bias15m(m15);
+  const mBias = computeBias(candlesBias);
+  const bias = biasDirection(mBias);
   if (!bias.direction) {
-    return { instId, signal: null, reason: bias.reason, m15 };
+    return { instId, signal: null, reason: bias.reason, mBias };
   }
 
-  const m5 = compute5m(candles5m);
-  const trigger = entryTrigger5m(m5, bias.direction);
+  const mEntry = computeEntry(candlesEntry);
+  const trigger = entryTrigger(mEntry, bias.direction);
   if (!trigger.ok) {
-    return { instId, signal: null, reason: `15m bias ${bias.direction} (${bias.reason}) but ${trigger.reason}`, m15, m5 };
+    return { instId, signal: null, reason: `1H bias ${bias.direction} (${bias.reason}) but ${trigger.reason}`, mBias, mEntry };
   }
 
-  const entry = m5.close;
-  const plan = buildTradePlan(bias.direction, entry, m15, m5);
+  const entry = mEntry.close;
+  const plan = buildTradePlan(bias.direction, entry, mBias, mEntry);
   if (!plan.valid) {
-    return { instId, signal: null, reason: plan.reason, m15, m5 };
+    return { instId, signal: null, reason: plan.reason, mBias, mEntry };
   }
 
   return {
@@ -248,8 +244,44 @@ export function evaluateSymbol({ instId, candles15m, candles5m }) {
     sl: plan.sl,
     tp: plan.tp,
     rr: plan.rr,
-    reasons: [bias.reason, trigger.reason, `SL basis: ${plan.slBasisNote}`],
-    m15,
-    m5,
+    reasons: [bias.reason, trigger.reason, `SL basis: ${plan.slBasisNote}`, `TP basis: ${plan.tpBasisNote}`],
+    mBias,
+    mEntry,
   };
+}
+
+// A stale scalp: open past STALE_POSITION_HOURS, hasn't hit SL/TP, and
+// momentum on the entry timeframe has faded or flipped against it — MACD
+// histogram no longer favors the position's side, or the market has gone
+// rangebound (ADX below the floor). Doesn't touch SL/TP levels themselves
+// (never move a stop to avoid a loss); this only decides whether to flatten
+// early because the setup that justified the trade is gone.
+export function shouldCloseStale({ position, nowMs, candlesEntry, candlesBias }) {
+  const openedAtMs = new Date(position.openedAt).getTime();
+  const ageHours = (nowMs - openedAtMs) / 3_600_000;
+  if (!(ageHours >= STALE_POSITION_HOURS)) {
+    return { close: false, reason: `position age ${ageHours.toFixed(1)}h < ${STALE_POSITION_HOURS}h` };
+  }
+  if (candlesEntry.length < 30 || candlesBias.length < 20) {
+    return { close: false, reason: "insufficient candle history to judge momentum" };
+  }
+
+  const mEntry = computeEntry(candlesEntry);
+  const { adx: adxLine } = adx(candlesBias, 14);
+  const biasAdx = adxLine[adxLine.length - 1];
+
+  if (mEntry.macdHist === undefined) {
+    return { close: false, reason: "insufficient 5M history to judge momentum" };
+  }
+
+  const momentumAgainst = position.side === "long" ? mEntry.macdHist < 0 : mEntry.macdHist > 0;
+  const gonelRangebound = biasAdx !== undefined && biasAdx < ADX_RANGEBOUND_MAX;
+
+  if (momentumAgainst || gonelRangebound) {
+    const why = momentumAgainst
+      ? `5M momentum flipped against the ${position.side} (MACD hist ${mEntry.macdHist.toFixed(4)})`
+      : `market gone rangebound (1H ADX ${biasAdx.toFixed(1)} < ${ADX_RANGEBOUND_MAX})`;
+    return { close: true, reason: `stale position (${ageHours.toFixed(1)}h open), ${why}` };
+  }
+  return { close: false, reason: `${ageHours.toFixed(1)}h open but momentum still favors the ${position.side}` };
 }

@@ -1,11 +1,11 @@
 import cron from "node-cron";
 import { runCycle } from "./runCycle.js";
 
-// How often to scan and, if a setup qualifies, trade. The underlying 1H/30M
-// indicators still only change on candle close, but the live (forming)
-// candle's price is re-evaluated every run, so a breakout is caught close
-// to when it happens.
-const DEFAULT_CRON = "*/15 * * * *";
+// How often to scan and, if a setup qualifies, trade — every 10 minutes per
+// spec for an active scalping cadence. Only meaningful for an always-on
+// deployment (Railway/VPS); GitHub Actions' own scheduler can't reliably
+// go this fast (see .github/workflows/trade-cycle.yml).
+const DEFAULT_CRON = "*/10 * * * *";
 
 export function startScheduler({ cronExpr = process.env.CYCLE_CRON || DEFAULT_CRON } = {}) {
   console.log(`OKX trading scheduler started — cron "${cronExpr}".`);

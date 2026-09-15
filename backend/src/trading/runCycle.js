@@ -1,9 +1,9 @@
 import { okxClientFromEnv } from "../okxClient.js";
 import { getCandles, getOpenPositions, getPositionsHistory } from "./marketData.js";
 import { selectUniverse } from "./universe.js";
-import { evaluateSymbol } from "./strategy.js";
+import { evaluateSymbol, shouldCloseStale } from "./strategy.js";
 import { sizePosition, checkEntryAllowed, MAX_OPEN_POSITIONS } from "./riskManager.js";
-import { executeTrade } from "./execution.js";
+import { executeTrade, closeStalePosition } from "./execution.js";
 import { checkNews } from "./newsFilter.js";
 import { loadState, saveState, appendCycleLog } from "./state.js";
 
@@ -65,6 +65,44 @@ async function reconcileClosedPositions(okx, state) {
   return state;
 }
 
+// Closes bot-tracked positions that have gone stale: open past
+// STALE_POSITION_HOURS with neither SL nor TP hit, and momentum on the
+// entry timeframe has faded or flipped — see strategy.shouldCloseStale().
+async function closeStalePositions(okx, state, now, report, dryRun) {
+  for (const [instId, position] of Object.entries(state.positions)) {
+    if (position.adopted) continue; // unknown SL/TP/side history — leave it alone
+    let candlesEntry, candlesBias;
+    try {
+      [candlesEntry, candlesBias] = await Promise.all([
+        getCandles(okx, instId, "5m", 50),
+        getCandles(okx, instId, "1H", 30),
+      ]);
+    } catch {
+      continue; // can't judge momentum this cycle; leave the position as-is
+    }
+
+    const verdict = shouldCloseStale({ position, nowMs: now, candlesEntry, candlesBias });
+    if (!verdict.close) continue;
+
+    if (dryRun) {
+      report.trades.push({ instId, side: position.side.toUpperCase(), action: "close-stale", reason: verdict.reason, dryRun: true });
+      continue;
+    }
+
+    try {
+      await closeStalePosition(okx, {
+        instId,
+        posSide: position.side,
+        mgnMode: position.mgnMode ?? "cross",
+      });
+      report.trades.push({ instId, side: position.side.toUpperCase(), action: "close-stale", reason: verdict.reason });
+      delete state.positions[instId];
+    } catch (err) {
+      report.skipped.push({ instId, reason: `stale-close failed: ${err.message}` });
+    }
+  }
+}
+
 export async function runCycle({ dryRun = false } = {}) {
   const okx = okxClientFromEnv();
   const now = Date.now();
@@ -72,6 +110,7 @@ export async function runCycle({ dryRun = false } = {}) {
 
   let state = await loadState();
   state = await reconcileClosedPositions(okx, state);
+  await closeStalePositions(okx, state, now, report, dryRun);
 
   const universe = await selectUniverse(okx);
 
@@ -84,10 +123,11 @@ export async function runCycle({ dryRun = false } = {}) {
       continue;
     }
 
-    let candles15m, candles5m;
+    let candlesBias, candlesEntry;
     try {
-      [candles15m, candles5m] = await Promise.all([
-        getCandles(okx, instId, "15m", 300),
+      // Scalping timeframes: 1H sets the main trend, 5M times entry.
+      [candlesBias, candlesEntry] = await Promise.all([
+        getCandles(okx, instId, "1H", 300),
         getCandles(okx, instId, "5m", 100),
       ]);
     } catch (err) {
@@ -95,7 +135,7 @@ export async function runCycle({ dryRun = false } = {}) {
       continue;
     }
 
-    const evaluation = evaluateSymbol({ instId, candles15m, candles5m });
+    const evaluation = evaluateSymbol({ instId, candlesBias, candlesEntry });
     if (!evaluation.signal) {
       report.skipped.push({ instId, reason: evaluation.reason });
       continue;
@@ -173,6 +213,10 @@ function printReport(report) {
     console.log("NO TRADE — No setup currently meets the required criteria.");
   } else {
     for (const t of report.trades) {
+      if (t.action === "close-stale") {
+        console.log(`\n${t.instId} — CLOSED STALE ${t.side}${t.dryRun ? " (dry-run)" : ""}: ${t.reason}`);
+        continue;
+      }
       console.log(`\n${t.instId} — ${t.side}${t.dryRun ? " (dry-run)" : ""}`);
       console.log(`  Entry: ${t.entry}`);
       console.log(`  Stop Loss: ${t.sl}`);

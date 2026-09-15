@@ -115,9 +115,13 @@ setup — trade the convenience of Railway against that.
 
 ## Strategy summary
 
-Scalping profile: fast timeframes and loosened confluence requirements so
-the bot finds many more (lower-conviction, quicker in-and-out) setups per
-cycle than a swing strategy would, at tighter stops/targets to match.
+This is an active scalping setup (1H trend / 5M entry), the result of
+relaxing the original design twice: the first (1H bias / 30M entry, full
+checklist confluence) went long stretches without a single qualifying
+trade, and a manual backtest of that version found only ~2 trades in a
+year. Every trade still carries a real SL and TP — what changed is how
+picky the setup has to be before one gets placed, not whether protection
+is attached:
 
 - **Universe**: live `*-USDT-SWAP` instruments, restricted to an allowlist
   of actual cryptocurrencies (OKX also lists USDT-margined perpetuals on
@@ -126,23 +130,29 @@ cycle than a swing strategy would, at tighter stops/targets to match.
   crypto contracts, so they're excluded by name), stablecoins excluded,
   filtered by 24h quote volume (liquidity) and bid/ask spread, top 30 by
   24h volume. *OKX has no market-cap field* — 24h volume is the proxy used.
-- **Bias (15m)**: the one hard veto is a genuinely directionless market
-  (ADX(14) < 12 — skipped outright, no exceptions). Otherwise it's a
-  majority vote, not a checklist every indicator must pass: of {EMA20 vs
-  EMA50 + price trend, MACD histogram/RSI momentum, EMA50 turning
-  (reversal in progress)}, at least 2 of 3 must agree on a direction.
-  Price action and momentum carry equal weight to trend structure.
-- **Entry (5m)**: breakout of the nearest swing level, trend continuation
-  with accelerating momentum, a retest of EMA20 holding, or a clear
-  rejection off support/resistance — any one of these qualifies. Volume
-  only needs to be "reasonable" (≥ 75% of its 20-period average), not a
-  spike.
-- **Stop-loss**: `max(structure, 1.0×ATR(15m))` beyond entry (whichever is
-  further away, i.e. more conservative), capped at 2.5×ATR(15m); trades
-  whose stop can't be placed sanely are skipped. Never moved further away
-  once set.
-- **Take-profit**: the better of 1.6×risk or the next 15m structural
-  level, floored at a 1:1.3 minimum — trades below that R:R are skipped.
+- **Trend (1H)**: purely price vs EMA200 — above it, only longs are
+  considered; below it, only shorts. The one veto is a genuinely
+  directionless market (ADX(14) < 15 — skipped outright; this is the
+  "evitar rangos laterales" rule). No other 1H indicator gates the trade.
+- **Entry (5M)**: a MACD histogram crossover, a breakout of the nearest
+  swing level, accelerating momentum continuation, a retest of EMA20
+  holding, a clear rejection off support/resistance, **or simply price
+  still trading on the bias side of EMA20 with momentum not opposing it**
+  — any one of these qualifies, they aren't ANDed together. That last one
+  is deliberately broad: waiting for a picture-perfect pattern on top of
+  an already-confirmed trend means missing most of the move. Volume only
+  needs to be "reasonable" (≥ 90% of its 20-period average), a
+  confirmation rather than a spike requirement.
+- **Stop-loss / take-profit**: straight off ATR(14) on the 5M chart —
+  SL ≈ 1.5×ATR, TP ≈ 3×ATR (≈1:2), nudged slightly tighter/closer when a
+  real support/resistance level sits inside that distance. Never moved
+  further away once set (never widen a stop to dodge a loss).
+- **Stale-position exit**: a bot position open more than 2 hours with
+  neither SL nor TP hit gets flattened early if 5M momentum has flipped
+  against it (MACD histogram) or the market has gone rangebound (1H ADX
+  back under 15) — a scalp that stopped working, not a reason to just wait
+  it out. Checked every cycle, closes via a market order after cancelling
+  its pending SL/TP algo orders.
 - **Position size**: fixed 2 USDT margin, lowest leverage in 1x–3x that
   reaches the instrument's minimum contract size. **Some contracts (BTC,
   ETH, …) require more than 2 USDT of margin even at 3x** — those are
@@ -153,14 +163,12 @@ cycle than a swing strategy would, at tighter stops/targets to match.
   stop-loss on a symbol before it's eligible again.
 - **Execution**: entry + SL + TP are submitted together in a single order
   via OKX's `attachAlgoOrds`, so a position is never live unprotected.
-- **Scan cadence**: a full cycle every 15 minutes (GitHub Actions' cron
-  floor). This is a real limitation for a scalping profile: setups on 5m/15m
-  charts can appear and fully reverse between two 15-minute checks. Open
-  positions still close on their own the instant SL/TP is hit — that's
-  handled by OKX's attached algo orders, not by the bot polling — but true
-  sub-minute scalping would need the bot moved off GitHub Actions onto a
-  host running `trade:scheduler` with a much shorter `CYCLE_CRON` (see
-  "Deploying the dashboard/full engine as a service" below).
+- **Scan cadence**: every 10 minutes is the target (`CYCLE_CRON` for an
+  always-on deployment). The GitHub Actions workflow itself stays on a
+  15-minute cron — GitHub's own scheduler is best-effort and has been
+  observed lagging **hours** past 15 minutes on this repo, so asking it
+  for 10 wouldn't actually get you 10; only an always-on host (Railway/VPS)
+  can deliver the real 10-minute cadence.
 
 Every cycle's decisions (trades and skip reasons) are appended to
 `backend/data/state.json` (open bot positions) and `backend/data/cycles.log`
