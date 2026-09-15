@@ -1,15 +1,4 @@
 {
-  "positions": {
-    "DOGE-USDT-SWAP": {
-      "side": "long",
-      "entry": 0.08481,
-      "sl": null,
-      "tp": null,
-      "size": 0.04,
-      "leverage": 2,
-      "openedAt": "2026-09-14T19:12:43.105Z",
-      "adopted": true
-    }
-  },
+  "positions": {},
   "stopLosses": {}
 }
