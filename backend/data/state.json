@@ -1,4 +1,15 @@
 {
-  "positions": {},
+  "positions": {
+    "BTC-USDT-SWAP": {
+      "side": "long",
+      "entry": 76306.2,
+      "sl": null,
+      "tp": null,
+      "size": 0.01,
+      "leverage": 3,
+      "openedAt": "2026-09-15T14:18:40.097Z",
+      "adopted": true
+    }
+  },
   "stopLosses": {}
 }
