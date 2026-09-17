@@ -175,6 +175,44 @@ Every cycle's decisions (trades and skip reasons) are appended to
 (full history, JSON lines), and surfaced in the dashboard's "Autonomous
 Strategy Engine" panel.
 
+## Grid trading bot (`backend/src/grid/`)
+
+A second, separate engine from the scalping strategy above: analyzes a
+symbol's trend/volatility and deploys an OKX contract grid bot (Neutral,
+Long or Short) with all parameters computed from the analysis — no manual
+tuning of range/leverage/stop-loss needed. The full decision rules live in
+[`CLAUDE.md`](./CLAUDE.md) at the repo root; this is what Claude Code
+follows when you ask it to analyze a symbol and deploy a grid.
+
+```bash
+cd backend
+npm run grid:analyze -- NEAR/USDT 1h        # JSON: ADX, EMAs, ATR, Bollinger Bands, price
+npm run grid:plan -- NEAR/USDT 1h           # analysis + the grid decision/parameters, no order placed
+npm run grid:deploy -- NEAR/USDT 1h         # dry-run (default) — same as above
+npm run grid:deploy -- NEAR/USDT 1h --live  # places a REAL grid order (real money unless OKX_DEMO=1)
+npm run grid:status                         # tracked bots + live PnL
+npm run grid:monitor                        # report-only regime/stop-loss check
+npm run grid:monitor -- --adjust            # actually stops a bot on hard-SL breach or a profit-lock regime change
+npm run grid:stop -- <algoId> <instId>      # manual stop
+```
+
+`.github/workflows/grid-monitor.yml` runs `grid:monitor -- --adjust
+--redeploy` every 15 minutes, the same pattern as `trade-cycle.yml`, and
+commits `backend/data/grid-state.json`/`grid-cycles.log` back so bot
+tracking survives between stateless CI runs. `--redeploy` auto-opens the
+next grid immediately after a profit-lock close (regime changed while in
+profit) — never after a stop-loss close, where the next deployment always
+needs an explicit command.
+
+In a Claude Code chat session, the trigger command is simply:
+
+> Analiza NEAR/USDT en 1h y despliega el grid correspondiente
+
+See CLAUDE.md for exactly what Claude does with that: analyze → decide
+Neutral/Long/Short → compute range/grid-count/leverage/stop-loss → show the
+plan → deploy (via the verified OKX MCP grid tools, or `grid/deploy.js` for
+the unattended path) → keep tracking it for `grid:monitor` to watch.
+
 ## Risk and limitations — read before going live
 
 - **This places real leveraged orders with no per-trade confirmation.**
