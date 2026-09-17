@@ -39,11 +39,15 @@ jobs:
           OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
           OKX_DEMO: ${{ vars.OKX_DEMO || '0' }}
         # --adjust: actually stop a bot on a hard stop-loss breach or a
-        # profit-lock regime change (see monitor.js). No --redeploy here —
-        # re-entry after a regime change is left to an explicit
-        # `npm run grid:deploy -- <SYMBOL> <BAR> --live` call, not automated,
-        # so every new deployment is a deliberate decision.
-        run: npm run grid:monitor -- --adjust
+        # profit-lock regime change (see monitor.js).
+        # --redeploy: after a profit-lock close (regime changed AND the bot
+        # was in profit), immediately open the new grid matching the current
+        # regime — never after a hard stop-loss close (monitor.js enforces
+        # this: hardStop suppresses redeploy so a losing thesis doesn't
+        # immediately re-enter). This was an explicit choice to let the
+        # system compound automatically instead of sitting in cash waiting
+        # for a manual command every time; see CLAUDE.md.
+        run: npm run grid:monitor -- --adjust --redeploy
 
       - name: Persist grid state and logs
         run: |

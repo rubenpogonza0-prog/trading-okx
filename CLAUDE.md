@@ -122,9 +122,13 @@ aplica estas reglas por cada bot activo:
   ganancia/pérdida flotante. La protección de capital nunca se pospone.
 - **Cambio de régimen de mercado** (el modo recomendado ahora difiere del
   modo con el que se desplegó el bot) **y el bot está en ganancia** → cerrar
-  para asegurar la ganancia. No se re-despliega automáticamente; el
-  siguiente despliegue es una decisión explícita (comando nuevo del usuario,
-  o `--redeploy` manual).
+  para asegurar la ganancia, y **redesplegar automáticamente** en el nuevo
+  modo recomendado (`monitor.js --redeploy`, activado por defecto en
+  `grid-monitor.yml`). Esto **nunca** ocurre después de un cierre por
+  stop-loss estricto — `monitor.js` lo bloquea explícitamente (`hardStop`
+  suprime el redeploy) para no volver a entrar de inmediato después de que
+  la tesis anterior falló; ahí el siguiente despliegue sí requiere una
+  decisión explícita del usuario.
 - **Cambio de régimen y el bot está en pérdida** → mantener, seguir
   monitoreando. No se cristaliza una pérdida solo por una lectura de
   régimen; el stop-loss estricto sigue siendo la única razón para cerrar en

@@ -196,10 +196,13 @@ npm run grid:monitor -- --adjust            # actually stops a bot on hard-SL br
 npm run grid:stop -- <algoId> <instId>      # manual stop
 ```
 
-`.github/workflows/grid-monitor.yml` runs `grid:monitor -- --adjust` every
-15 minutes, the same pattern as `trade-cycle.yml`, and commits
-`backend/data/grid-state.json`/`grid-cycles.log` back so bot tracking
-survives between stateless CI runs.
+`.github/workflows/grid-monitor.yml` runs `grid:monitor -- --adjust
+--redeploy` every 15 minutes, the same pattern as `trade-cycle.yml`, and
+commits `backend/data/grid-state.json`/`grid-cycles.log` back so bot
+tracking survives between stateless CI runs. `--redeploy` auto-opens the
+next grid immediately after a profit-lock close (regime changed while in
+profit) — never after a stop-loss close, where the next deployment always
+needs an explicit command.
 
 In a Claude Code chat session, the trigger command is simply:
 
