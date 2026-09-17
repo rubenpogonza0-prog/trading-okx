@@ -1,0 +1,56 @@
+name: OKX grid monitor
+
+on:
+  schedule:
+    # Same reasoning as trade-cycle.yml: GitHub's scheduler is best-effort,
+    # 15 min is a realistic floor.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: okx-grid-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: write # needed to commit backend/data/grid-state.json + grid-cycles.log back
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Check and adjust active grid bots
+        working-directory: backend
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+          OKX_DEMO: ${{ vars.OKX_DEMO || '0' }}
+        # --adjust: actually stop a bot on a hard stop-loss breach or a
+        # profit-lock regime change (see monitor.js). No --redeploy here —
+        # re-entry after a regime change is left to an explicit
+        # `npm run grid:deploy -- <SYMBOL> <BAR> --live` call, not automated,
+        # so every new deployment is a deliberate decision.
+        run: npm run grid:monitor -- --adjust
+
+      - name: Persist grid state and logs
+        run: |
+          git config user.name "okx-trading-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f backend/data/grid-state.json backend/data/grid-cycles.log
+          git diff --cached --quiet && exit 0
+          git commit -m "Update grid bot state [skip ci]"
+          git pull --rebase --autostash
+          git push

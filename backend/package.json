@@ -8,7 +8,13 @@
     "start": "node src/index.js",
     "trade:once": "node src/trading/runCycle.js",
     "trade:dry-run": "node src/trading/runCycle.js --dry-run",
-    "trade:scheduler": "node src/trading/scheduler.js"
+    "trade:scheduler": "node src/trading/scheduler.js",
+    "grid:analyze": "node src/grid/analyze.js",
+    "grid:plan": "node src/grid/planner.js",
+    "grid:deploy": "node src/grid/deploy.js",
+    "grid:monitor": "node src/grid/monitor.js",
+    "grid:status": "node src/grid/status.js",
+    "grid:stop": "node src/grid/stop.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

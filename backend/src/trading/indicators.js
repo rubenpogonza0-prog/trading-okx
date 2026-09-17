@@ -159,3 +159,23 @@ export function sma(values, period) {
   }
   return out;
 }
+
+export function stdev(values, period) {
+  const out = new Array(values.length).fill(undefined);
+  const mean = sma(values, period);
+  for (let i = period - 1; i < values.length; i++) {
+    let sumSq = 0;
+    for (let j = i - period + 1; j <= i; j++) sumSq += (values[j] - mean[i]) ** 2;
+    out[i] = Math.sqrt(sumSq / period);
+  }
+  return out;
+}
+
+// Standard Bollinger Bands: SMA(period) +/- mult * population stdev(period).
+export function bollingerBands(closes, period = 20, mult = 2) {
+  const middle = sma(closes, period);
+  const sd = stdev(closes, period);
+  const upper = closes.map((_, i) => (middle[i] !== undefined ? middle[i] + mult * sd[i] : undefined));
+  const lower = closes.map((_, i) => (middle[i] !== undefined ? middle[i] - mult * sd[i] : undefined));
+  return { upper, middle, lower };
+}
