@@ -3,3 +3,9 @@ node_modules/
 dist/
 *.log
 backend/data/
+
+# pullback research tool
+pullback/data/
+pullback/output/
+__pycache__/
+.pytest_cache/
