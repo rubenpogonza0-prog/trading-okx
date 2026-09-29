@@ -1,4 +1,15 @@
 {
-  "positions": {},
+  "positions": {
+    "HYPE-USDT-SWAP": {
+      "side": "long",
+      "entry": 85.0425,
+      "sl": null,
+      "tp": null,
+      "size": 4,
+      "leverage": 1,
+      "openedAt": "2026-09-29T20:04:14.782Z",
+      "adopted": true
+    }
+  },
   "stopLosses": {}
 }
