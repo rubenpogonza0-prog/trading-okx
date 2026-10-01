@@ -9,6 +9,16 @@
       "leverage": 4,
       "openedAt": "2026-10-01T16:05:41.467Z",
       "adopted": true
+    },
+    "ETH-USDT-SWAP": {
+      "side": "long",
+      "entry": 2703.55,
+      "sl": null,
+      "tp": null,
+      "size": 0.21,
+      "leverage": 4,
+      "openedAt": "2026-10-01T20:06:14.925Z",
+      "adopted": true
     }
   },
   "stopLosses": {}
