@@ -1,15 +1,4 @@
 {
-  "positions": {
-    "AVAX-USDT-SWAP": {
-      "side": "long",
-      "entry": 11.138,
-      "sl": null,
-      "tp": null,
-      "size": 3.2,
-      "leverage": 4,
-      "openedAt": "2026-10-02T05:08:51.754Z",
-      "adopted": true
-    }
-  },
+  "positions": {},
   "stopLosses": {}
 }
