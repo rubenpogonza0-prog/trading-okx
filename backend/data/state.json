@@ -9,6 +9,26 @@
       "leverage": 2,
       "openedAt": "2026-10-03T08:05:42.012Z",
       "adopted": true
+    },
+    "AVAX-USDT-SWAP": {
+      "side": "long",
+      "entry": 11.126,
+      "sl": null,
+      "tp": null,
+      "size": 1.5,
+      "leverage": 2,
+      "openedAt": "2026-10-03T12:07:00.987Z",
+      "adopted": true
+    },
+    "SUI-USDT-SWAP": {
+      "side": "long",
+      "entry": 1.1904,
+      "sl": null,
+      "tp": null,
+      "size": 14,
+      "leverage": 2,
+      "openedAt": "2026-10-03T12:06:59.091Z",
+      "adopted": true
     }
   },
   "stopLosses": {}
