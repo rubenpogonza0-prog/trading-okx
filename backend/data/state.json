@@ -1,15 +1,5 @@
 {
   "positions": {
-    "LTC-USDT-SWAP": {
-      "side": "long",
-      "entry": 69.21,
-      "sl": null,
-      "tp": null,
-      "size": 0.2,
-      "leverage": 2,
-      "openedAt": "2026-10-03T08:05:42.012Z",
-      "adopted": true
-    },
     "AVAX-USDT-SWAP": {
       "side": "long",
       "entry": 11.126,
