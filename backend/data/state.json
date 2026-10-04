@@ -9,26 +9,6 @@
       "leverage": 2,
       "openedAt": "2026-10-03T12:07:00.987Z",
       "adopted": true
-    },
-    "SUI-USDT-SWAP": {
-      "side": "long",
-      "entry": 1.1904,
-      "sl": null,
-      "tp": null,
-      "size": 14,
-      "leverage": 2,
-      "openedAt": "2026-10-03T12:06:59.091Z",
-      "adopted": true
-    },
-    "BNB-USDT-SWAP": {
-      "side": "long",
-      "entry": 777.3,
-      "sl": null,
-      "tp": null,
-      "size": 2,
-      "leverage": 2,
-      "openedAt": "2026-10-03T16:06:02.056Z",
-      "adopted": true
     }
   },
   "stopLosses": {}
