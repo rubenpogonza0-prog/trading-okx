@@ -19,6 +19,36 @@
       "leverage": 2,
       "openedAt": "2026-10-06T08:05:45.587Z",
       "adopted": true
+    },
+    "AAVE-USDT-SWAP": {
+      "side": "long",
+      "entry": 182.86,
+      "sl": null,
+      "tp": null,
+      "size": 0.9,
+      "leverage": 2,
+      "openedAt": "2026-10-06T12:07:25.704Z",
+      "adopted": true
+    },
+    "SUI-USDT-SWAP": {
+      "side": "long",
+      "entry": 1.2031,
+      "sl": null,
+      "tp": null,
+      "size": 14,
+      "leverage": 2,
+      "openedAt": "2026-10-06T12:07:23.863Z",
+      "adopted": true
+    },
+    "SOL-USDT-SWAP": {
+      "side": "long",
+      "entry": 120.34,
+      "sl": null,
+      "tp": null,
+      "size": 0.14,
+      "leverage": 2,
+      "openedAt": "2026-10-06T12:07:21.770Z",
+      "adopted": true
     }
   },
   "stopLosses": {}
