@@ -1,45 +1,4 @@
 {
-  "positions": {
-    "BTC-USDT-SWAP": {
-      "side": "long",
-      "entry": 85583.1,
-      "sl": null,
-      "tp": null,
-      "size": 0.02,
-      "leverage": 2,
-      "openedAt": "2026-10-06T08:05:46.450Z",
-      "adopted": true
-    },
-    "AAVE-USDT-SWAP": {
-      "side": "long",
-      "entry": 182.86,
-      "sl": null,
-      "tp": null,
-      "size": 0.9,
-      "leverage": 2,
-      "openedAt": "2026-10-06T12:07:25.704Z",
-      "adopted": true
-    },
-    "SOL-USDT-SWAP": {
-      "side": "long",
-      "entry": 120.34,
-      "sl": null,
-      "tp": null,
-      "size": 0.14,
-      "leverage": 2,
-      "openedAt": "2026-10-06T12:07:21.770Z",
-      "adopted": true
-    },
-    "NEAR-USDT-SWAP": {
-      "side": "long",
-      "entry": 5.111,
-      "sl": null,
-      "tp": null,
-      "size": 0.3,
-      "leverage": 2,
-      "openedAt": "2026-10-06T20:05:49.875Z",
-      "adopted": true
-    }
-  },
+  "positions": {},
   "stopLosses": {}
 }
