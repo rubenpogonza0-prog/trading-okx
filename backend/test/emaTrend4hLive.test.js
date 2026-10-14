@@ -14,7 +14,7 @@ const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/near-4h-closes.json", 
 const H4 = 4 * 3600 * 1000;
 const ENTRY_TS = Date.UTC(2026, 8, 16, 8); // 16/09 08:00 — a long entry in the reference backtest
 
-function fakeOkx({ lastIndex, acctLv }) {
+function fakeOkx({ lastIndex, acctLv, posMode }) {
   const calls = [];
   const algos = [];
   let position = null;
@@ -41,7 +41,7 @@ function fakeOkx({ lastIndex, acctLv }) {
       calls.push(["GET", p, q]);
       switch (p) {
         case "/api/v5/account/config":
-          return [{ posMode: "net_mode", acctLv: acctLv ?? "2" }];
+          return [{ posMode: posMode ?? "net_mode", acctLv: acctLv ?? "2" }];
         case "/api/v5/account/positions":
           return position ? [position] : [];
         case "/api/v5/account/balance":
@@ -149,4 +149,23 @@ test("refuses to run on an account in Spot mode", async () => {
   const okx = fakeOkx({ lastIndex: 500, acctLv: "1" });
   await assert.rejects(runEmaTrend4hCycle({ okx }), /Spot mode/);
   assert.ok(!okx.calls.some(([m]) => m === "POST"));
+});
+
+test("hedge (long/short) mode sends posSide on every order", async () => {
+  fs.rmSync(path.join(process.env.BOT_DATA_DIR, "state.json"), { force: true });
+  const lastIndex = fx.ts.indexOf(ENTRY_TS);
+  const okx = fakeOkx({ lastIndex, posMode: "long_short_mode" });
+  await runEmaTrend4hCycle({ okx });
+  const post = (p) => okx.calls.filter(([m, path]) => m === "POST" && path === p).map((c) => c[2]);
+  assert.equal(post("/api/v5/account/set-leverage")[0].posSide, "long");
+  const order = post("/api/v5/trade/order")[0];
+  assert.equal(order.posSide, "long");
+  assert.equal(order.side, "buy");
+
+  okx.algos.length = 0; // force a stop restore
+  await runEmaTrend4hCycle({ okx });
+  const stop = post("/api/v5/trade/order-algo")[0];
+  assert.equal(stop.posSide, "long");
+  assert.equal(stop.side, "sell");
+  assert.equal(stop.reduceOnly, undefined); // not allowed in hedge mode
 });
