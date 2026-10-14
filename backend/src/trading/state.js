@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const DATA_DIR = new URL("../../data/", import.meta.url).pathname;
+// BOT_DATA_DIR lets tests point state/log files somewhere disposable.
+const DATA_DIR = process.env.BOT_DATA_DIR || new URL("../../data/", import.meta.url).pathname;
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const LOG_FILE = path.join(DATA_DIR, "cycles.log");
 

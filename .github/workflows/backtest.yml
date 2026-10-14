@@ -1,0 +1,47 @@
+name: Backtest ema_trend_4h
+
+# Manual only: Actions tab → "Backtest ema_trend_4h" → Run workflow.
+# Uses OKX public market data (no API keys) and never places orders.
+on:
+  workflow_dispatch:
+    inputs:
+      instruments:
+        description: '"auto" (top liquid cryptos) or a comma-separated list, e.g. NEAR-USDT-SWAP,SOL-USDT-SWAP'
+        default: auto
+      top:
+        description: How many coins when instruments = auto
+        default: "20"
+      days:
+        description: Days to test
+        default: "180"
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backtest
+        working-directory: backend
+        env:
+          INSTRUMENTS: ${{ inputs.instruments }}
+        run: npm run backtest:ema4h -- --top "${{ inputs.top }}" --days "${{ inputs.days }}" | tee backtest.txt
+
+      - name: Show results in the run summary
+        working-directory: backend
+        run: |
+          { echo '```'; cat backtest.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

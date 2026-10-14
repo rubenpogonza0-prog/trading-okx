@@ -6,6 +6,7 @@ import { sizePosition, checkEntryAllowed, MAX_OPEN_POSITIONS } from "./riskManag
 import { executeTrade, closeStalePosition } from "./execution.js";
 import { checkNews } from "./newsFilter.js";
 import { loadState, saveState, appendCycleLog } from "./state.js";
+import { runEmaTrend4hCycle, printEmaTrend4hReport } from "./emaTrend4h/live.js";
 
 // Reconciles local state against OKX's actual live positions — the source
 // of truth. This matters even more when `backend/data/state.json` isn't
@@ -103,7 +104,16 @@ async function closeStalePositions(okx, state, now, report, dryRun) {
   }
 }
 
+// STRATEGY selects which engine a cycle runs: "scalp_legacy" (default, the
+// 1H/5M scalper below) or "ema_trend_4h" (see emaTrend4h/live.js).
 export async function runCycle({ dryRun = false } = {}) {
+  const strategy = process.env.STRATEGY || "scalp_legacy";
+  if (strategy === "ema_trend_4h") return runEmaTrend4hCycle({ dryRun });
+  if (strategy !== "scalp_legacy") throw new Error(`Unknown STRATEGY "${strategy}"`);
+  return runScalpCycle({ dryRun });
+}
+
+async function runScalpCycle({ dryRun = false } = {}) {
   const okx = okxClientFromEnv();
   const now = Date.now();
   const report = { startedAt: new Date(now).toISOString(), trades: [], skipped: [], noTrade: false };
@@ -209,6 +219,7 @@ export async function runCycle({ dryRun = false } = {}) {
 }
 
 function printReport(report) {
+  if (report.strategy === "ema_trend_4h") return printEmaTrend4hReport(report);
   if (report.trades.length === 0) {
     console.log("NO TRADE — No setup currently meets the required criteria.");
   } else {

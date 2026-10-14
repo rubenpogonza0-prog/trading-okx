@@ -2,9 +2,11 @@ name: OKX trading cycle
 
 on:
   schedule:
-    # GitHub's scheduler is best-effort and won't run more often than every
-    # 5 minutes; 15 min is a realistic floor for reliable timing.
-    - cron: "*/15 * * * *"
+    # Hourly, at minute 7 (off the top of the hour, when GitHub's scheduler
+    # is busiest). The ema_trend_4h strategy acts on 4H candle closes; the
+    # hourly runs in between keep its trailing stops checked. GitHub's
+    # scheduler is best-effort and can run late on a quiet repo.
+    - cron: "7 * * * *"
   workflow_dispatch: {} # lets you trigger a cycle manually from the Actions tab
 
 concurrency:
@@ -31,14 +33,26 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Run unit tests (no trading if they fail)
+        working-directory: backend
+        run: npm test
+
       - name: Run one trading cycle
         working-directory: backend
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
-          OKX_DEMO: ${{ vars.OKX_DEMO || '0' }}
+          # Demo unless the repo variable OKX_DEMO is explicitly set to 0.
+          OKX_DEMO: ${{ vars.OKX_DEMO || '1' }}
           NEWS_FILTER_ENABLED: ${{ vars.NEWS_FILTER_ENABLED || '1' }}
+          STRATEGY: ${{ vars.STRATEGY || 'ema_trend_4h' }}
+          INSTRUMENTS: ${{ vars.INSTRUMENTS || 'auto' }}
+          UNIVERSE_TOP_N: ${{ vars.UNIVERSE_TOP_N || '20' }}
+          RISK_PER_TRADE: ${{ vars.RISK_PER_TRADE || '0.02' }}
+          MAX_LEVERAGE: ${{ vars.MAX_LEVERAGE || '2' }}
+          MAX_OPEN_POSITIONS: ${{ vars.MAX_OPEN_POSITIONS || '3' }}
+          MAX_TOTAL_EXPOSURE: ${{ vars.MAX_TOTAL_EXPOSURE || '3' }}
         run: npm run trade:once
 
       - name: Persist bot state (positions/cooldowns) and logs

@@ -66,3 +66,26 @@ export function okxClientFromEnv() {
     demo: process.env.OKX_DEMO === "1",
   });
 }
+
+// Unauthenticated client for public market-data endpoints (candles,
+// instruments, tickers) — used by the backtester, which needs no API key.
+export function createPublicClient() {
+  return {
+    async get(path, query) {
+      const qs = query
+        ? "?" +
+          new URLSearchParams(
+            Object.entries(query).filter(([, v]) => v !== undefined && v !== "")
+          ).toString()
+        : "";
+      const res = await fetch(BASE_URL + path + qs);
+      const json = await res.json();
+      if (json.code !== "0") {
+        const err = new Error(json.msg || "OKX API error");
+        err.okxCode = json.code;
+        throw err;
+      }
+      return json.data;
+    },
+  };
+}
