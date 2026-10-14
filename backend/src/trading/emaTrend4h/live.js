@@ -166,7 +166,16 @@ export async function runEmaTrend4hCycle({ dryRun = false, okx = okxClientFromEn
   const state = await loadState();
   const st = (state.emaTrend4h ??= { lastBarTs: {}, positions: {} });
 
-  const hedgeMode = (await getAccountConfig(okx)).posMode === "long_short_mode";
+  const accountConfig = await getAccountConfig(okx);
+  // acctLv "1" is OKX's Spot mode, where perpetual swaps can't be traded at all.
+  if (accountConfig.acctLv === "1") {
+    throw new Error(
+      "OKX account is in Spot mode (acctLv 1): perpetual swaps can't be traded. " +
+        "Switch the account mode to Futures (or a margin mode) in OKX settings" +
+        (process.env.OKX_DEMO === "1" ? " — in Demo trading, the demo account has its own setting." : ".")
+    );
+  }
+  const hedgeMode = accountConfig.posMode === "long_short_mode";
   const livePositions = (await getOpenPositions(okx)).filter((p) => Number(p.pos) !== 0);
   const liveById = new Map(livePositions.map((p) => [p.instId, p]));
   let { equity, available } = await getUsdtEquity(okx);

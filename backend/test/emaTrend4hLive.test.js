@@ -14,7 +14,7 @@ const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/near-4h-closes.json", 
 const H4 = 4 * 3600 * 1000;
 const ENTRY_TS = Date.UTC(2026, 8, 16, 8); // 16/09 08:00 — a long entry in the reference backtest
 
-function fakeOkx({ lastIndex }) {
+function fakeOkx({ lastIndex, acctLv }) {
   const calls = [];
   const algos = [];
   let position = null;
@@ -41,7 +41,7 @@ function fakeOkx({ lastIndex }) {
       calls.push(["GET", p, q]);
       switch (p) {
         case "/api/v5/account/config":
-          return [{ posMode: "net_mode" }];
+          return [{ posMode: "net_mode", acctLv: acctLv ?? "2" }];
         case "/api/v5/account/positions":
           return position ? [position] : [];
         case "/api/v5/account/balance":
@@ -143,4 +143,10 @@ test("trails the stop on the next candle and drops positions closed by the excha
   const later = fakeOkx({ lastIndex: lastIndex + 2 });
   const r2 = await runEmaTrend4hCycle({ okx: later });
   assert.equal(r2.trades[0].action, "closed-by-exchange-stop");
+});
+
+test("refuses to run on an account in Spot mode", async () => {
+  const okx = fakeOkx({ lastIndex: 500, acctLv: "1" });
+  await assert.rejects(runEmaTrend4hCycle({ okx }), /Spot mode/);
+  assert.ok(!okx.calls.some(([m]) => m === "POST"));
 });
