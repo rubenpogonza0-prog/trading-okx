@@ -8,7 +8,9 @@
     "start": "node src/index.js",
     "trade:once": "node src/trading/runCycle.js",
     "trade:dry-run": "node src/trading/runCycle.js --dry-run",
-    "trade:scheduler": "node src/trading/scheduler.js"
+    "trade:scheduler": "node src/trading/scheduler.js",
+    "backtest:ema4h": "node src/trading/emaTrend4h/backtest.js",
+    "test": "node --test"
   },
   "dependencies": {
     "cors": "^2.8.5",

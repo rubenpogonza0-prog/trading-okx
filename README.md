@@ -58,10 +58,13 @@ to sign up for.
 4. Under **Variables** (same page, different tab), optionally add
    `OKX_DEMO` = `1` (default if you don't set it — demo mode) or `0` (live)
    once you're ready.
-5. That's it. The workflow runs every 15 minutes (GitHub's scheduler won't
-   reliably go faster than that, and can lag past it on a low-activity
-   repo), or trigger one immediately from the **Actions** tab → "OKX
-   trading cycle" → **Run workflow**.
+5. That's it. The workflow runs every hour (minute 7) with
+   `STRATEGY=ema_trend_4h` unless you set the `STRATEGY` variable (GitHub's
+   scheduler can lag on a low-activity repo), or trigger one immediately
+   from the **Actions** tab → "OKX trading cycle" → **Run workflow**. A demo
+   API key is required while `OKX_DEMO` is unset/`1` — OKX rejects live
+   keys in demo mode and vice versa. Unit tests run first; a failing test
+   stops the cycle before any order.
 6. Bot state (`backend/data/state.json`, `backend/data/cycles.log`) is
    committed back to the repo by the workflow after each run — that's how
    it remembers open positions/cooldowns between runs despite each run
@@ -113,9 +116,80 @@ A VPS (systemd/pm2 + `npm run trade:scheduler`) works the same way and
 gives you a real persistent filesystem for `backend/data` with no extra
 setup — trade the convenience of Railway against that.
 
-## Strategy summary
+## Strategy: ema_trend_4h (default on GitHub Actions)
 
-This is an active scalping setup (1H trend / 5M entry), the result of
+`STRATEGY=ema_trend_4h` — a slower trend-following strategy on **4H
+candles**, long and short, run **every hour** by
+`.github/workflows/trade-cycle.yml`. Code: `backend/src/trading/emaTrend4h/`.
+The live bot and the backtester share the same signal functions
+(`signals.js`), and a unit test checks that the backtest still reproduces
+the reference result below.
+
+**Universe**: `INSTRUMENTS=auto` (default) trades the top `UNIVERSE_TOP_N`
+(20) liquid cryptocurrencies picked by `universe.js` (same allowlist /
+liquidity / spread filters as the scalper), or set an explicit list, e.g.
+`INSTRUMENTS=NEAR-USDT-SWAP,SOL-USDT-SWAP`.
+
+**Indicators** (on closed 4H candles only): EMA 6, EMA 21, EMA 100, RSI 14
+(Wilder), and VOL = Wilder average of absolute close-to-close moves (14).
+
+**Long** — all of: EMA6 crosses above EMA21; 50 < RSI < 70; close > EMA100;
+EMA100 higher than 6 candles (24h) ago.
+
+**Short ("sell the failed rebound")** — all of: confirmed downtrend (close
+< EMA100, EMA21 < EMA100, EMA100 lower than 6 candles ago); RSI crosses
+back below 50 after having been above 55 within the previous 6 candles;
+EMA6 < EMA21.
+
+**Exit**: trailing stop at 2 × VOL from the close, moved only in the
+trade's favour each new 4H candle (amended on the exchange); or the
+opposite EMA6/EMA21 cross (market close). No fixed take-profit.
+
+**Risk**: each trade is sized so that hitting its stop loses
+`RISK_PER_TRADE` (2%) of USDT equity; isolated margin, `MAX_LEVERAGE` 2x per
+position, at most `MAX_OPEN_POSITIONS` (3) positions and total open notional
+≤ `MAX_TOTAL_EXPOSURE` (3) × equity. Cryptos are highly correlated — with 3
+positions open a broad sell-off can hit all stops together (~6% of equity).
+
+**Execution**: market entry with the stop attached in the same order
+(`attachAlgoOrds`). Each instrument's latest closed 4H candle is processed
+once (`state.emaTrend4h.lastBarTs` in `backend/data/state.json`); the hourly
+runs in between only re-check that every open position still has its stop
+order and restore it if it's missing. Positions the bot didn't open are
+never touched, and block new entries on that instrument.
+
+**Backtest**:
+
+```bash
+cd backend
+npm run backtest:ema4h                                    # top 20 cryptos, last 180 days
+npm run backtest:ema4h -- --inst NEAR-USDT-SWAP --days 365 --trades
+```
+
+Or on GitHub: **Actions → "Backtest ema_trend_4h" → Run workflow** (public
+data, no keys, never trades); results appear in the run summary.
+
+Reference (NEAR-USDT-SWAP, 03/06–14/10/2026, 2% risk, fees + slippage
+0.1%/side): **+32.3%**, max drawdown **−10.6%**, 12 trades (10 long / 2
+short), 50% winners. NEAR fell 44% in the first half of that window
+(strategy +10%) and rose 206% in the second (strategy +20%). The parameters
+were tuned on NEAR only — **run the multi-coin backtest before trusting it
+on other coins**, and run it in demo for several weeks first: it only
+trades ~3 times a month per coin, and most of its profit comes from a few
+large winners.
+
+**Known differences from the backtest**: the exchange stop triggers
+intrabar on the last price (the backtest checks stops on candle closes);
+entries fill at market a few minutes after the candle close; GitHub's
+scheduler can run late, delaying an entry/exit by up to an hour or more.
+
+**Switching strategy**: set the repo variable `STRATEGY` to `scalp_legacy`
+(Settings → Secrets and variables → Actions → Variables) to go back to the
+scalper. For Railway/VPS set `STRATEGY` in the environment.
+
+## Strategy summary (scalp_legacy)
+
+`STRATEGY=scalp_legacy` (default when `STRATEGY` is unset outside the GitHub workflow). This is an active scalping setup (1H trend / 5M entry), the result of
 relaxing the original design twice: the first (1H bias / 30M entry, full
 checklist confluence) went long stretches without a single qualifying
 trade, and a manual backtest of that version found only ~2 trades in a
