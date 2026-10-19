@@ -37,19 +37,19 @@ const SYMBOLS = (args.symbols ?? "BTC,ETH,SOL,XRP,DOGE,BNB,ADA,LINK")
 // Variants: the original spec, each change on its own, and combinations.
 const VARIANTS = [
   ORIGINAL,
-  { ...ORIGINAL, name: "+adx20", adxMin: 20 },
   { ...ORIGINAL, name: "+htf4h", htfEmaPeriod: 50 },
-  { ...ORIGINAL, name: "+ext1atr", maxExtensionAtr: 1.0 },
-  { ...ORIGINAL, name: "+vol1.5x", volMult: 1.5 },
-  { ...ORIGINAL, name: "no-rsi", rsiLong: [0, 100], rsiShort: [0, 100] },
   { ...ORIGINAL, name: "+be1R", breakevenAtR: 1.0 },
-  { ...ORIGINAL, name: "+time48", maxBars: 48 },
-  { ...ORIGINAL, name: "trail3atr", tpAtr: null, trailAtr: 3.0, breakevenAtR: 1.0 },
   { ...ORIGINAL, name: "sl2-tp4", slAtr: 2.0, tpAtr: 4.0 },
-  { ...ORIGINAL, name: "filters", adxMin: 20, htfEmaPeriod: 50, maxExtensionAtr: 1.0 },
-  { ...ORIGINAL, name: "filters+be+time", adxMin: 20, htfEmaPeriod: 50, maxExtensionAtr: 1.0, breakevenAtR: 1.0, maxBars: 48 },
-  { ...ORIGINAL, name: "filters+trail", adxMin: 20, htfEmaPeriod: 50, maxExtensionAtr: 1.0, tpAtr: null, trailAtr: 3.0, breakevenAtR: 1.0 },
-  { ...ORIGINAL, name: "filters+norsi+trail", adxMin: 20, htfEmaPeriod: 50, maxExtensionAtr: 1.0, rsiLong: [0, 100], rsiShort: [0, 100], tpAtr: null, trailAtr: 3.0, breakevenAtR: 1.0 },
+  { ...ORIGINAL, name: "sl3-tp6", slAtr: 3.0, tpAtr: 6.0 },
+  { ...ORIGINAL, name: "d50", breakoutLookback: 50 },
+  { ...ORIGINAL, name: "d50-sl3-tp6", breakoutLookback: 50, slAtr: 3.0, tpAtr: 6.0 },
+  { ...ORIGINAL, name: "d50-sl3-trail4", breakoutLookback: 50, slAtr: 3.0, tpAtr: null, trailAtr: 4.0 },
+  { ...ORIGINAL, name: "d100-sl3-trail4", breakoutLookback: 100, slAtr: 3.0, tpAtr: null, trailAtr: 4.0 },
+  { ...ORIGINAL, name: "d50-sl3-tp6-htf", breakoutLookback: 50, slAtr: 3.0, tpAtr: 6.0, htfEmaPeriod: 50 },
+  { ...ORIGINAL, name: "d50-sl3-trail4-htf", breakoutLookback: 50, slAtr: 3.0, tpAtr: null, trailAtr: 4.0, htfEmaPeriod: 50 },
+  { ...ORIGINAL, name: "d50-sl3-trail4-norsi", breakoutLookback: 50, slAtr: 3.0, tpAtr: null, trailAtr: 4.0, rsiLong: [0, 100], rsiShort: [0, 100] },
+  { ...ORIGINAL, name: "d50-sl3-tp6-cost", breakoutLookback: 50, slAtr: 3.0, tpAtr: 6.0, maxCostR: 0.06 },
+  { ...ORIGINAL, name: "d50-sl3-trail4-cost", breakoutLookback: 50, slAtr: 3.0, tpAtr: null, trailAtr: 4.0, maxCostR: 0.06 },
   IMPROVED,
 ];
 
@@ -127,6 +127,7 @@ function simulate(instId, candles, cfg) {
           bars: i - pos.entryIdx + 1,
           why: exit.why === "stop" && pos.movedStop ? "be/trail" : exit.why,
           r: gross - cost,
+          gross,
         });
         pos = null;
       } else {
@@ -151,6 +152,8 @@ function simulate(instId, candles, cfg) {
     const s = sig.direction === "long" ? 1 : -1;
     const entry = candles[i + 1].open; // slippage is charged in the trade cost
     const risk = cfg.slAtr * ind.atr[i];
+    // Skip trades whose round-trip cost is too large a share of the risk.
+    if (cfg.maxCostR != null && (2 * (FEE + SLIPPAGE) * entry) / risk > cfg.maxCostR) continue;
     pos = {
       dir: s,
       entry,
@@ -192,6 +195,7 @@ function stats(trades) {
   const sd = Math.sqrt(rs.reduce((a, r) => a + (r - mean) ** 2, 0) / n);
   return {
     trades: n,
+    grossExpR: trades.reduce((a, t) => a + t.gross, 0) / n,
     winRate: wins.length / n,
     profitFactor: sumL ? sumW / sumL : Infinity,
     expectancyR: mean,
@@ -206,11 +210,11 @@ function stats(trades) {
 
 const fmt = (x, d = 2) => (x === undefined ? "-" : x === Infinity ? "∞" : x.toFixed(d));
 function row(name, s) {
-  if (!s.trades) return `| ${name} | 0 | - | - | - | - | - | - | - |`;
-  return `| ${name} | ${s.trades} | ${fmt(s.winRate * 100, 1)}% | ${fmt(s.profitFactor)} | ${fmt(s.expectancyR, 3)} | ${fmt(s.totalR, 1)} | ${fmt(s.maxDdR, 1)} | ${fmt(s.returnPct, 1)}% | ${fmt(s.maxDdPct, 1)}% |`;
+  if (!s.trades) return `| ${name} | 0 | - | - | - | - | - | - | - | - |`;
+  return `| ${name} | ${s.trades} | ${fmt(s.grossExpR, 3)} | ${fmt(s.winRate * 100, 1)}% | ${fmt(s.profitFactor)} | ${fmt(s.expectancyR, 3)} | ${fmt(s.totalR, 1)} | ${fmt(s.maxDdR, 1)} | ${fmt(s.returnPct, 1)}% | ${fmt(s.maxDdPct, 1)}% |`;
 }
 const HEADER =
-  "| Variante | Trades | Win% | PF | Expect. (R) | Total R | MaxDD (R) | Retorno (1% riesgo) | MaxDD % |\n|---|---|---|---|---|---|---|---|---|";
+  "| Variante | Trades | Expect. bruta (R) | Win% | PF | Expect. (R) | Total R | MaxDD (R) | Retorno (1% riesgo) | MaxDD % |\n|---|---|---|---|---|---|---|---|---|---|";
 
 async function main() {
   console.log(`Downloading 1H candles since ${new Date(FROM).toISOString()}...`);
