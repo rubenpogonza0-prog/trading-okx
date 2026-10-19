@@ -20,7 +20,6 @@ export const ORIGINAL = {
   tpAtr: 3.0,
   // Optional filters/exits, all off in the original spec.
   adxMin: null,
-  emaSlopeBars: null,
   htfEmaPeriod: null,
   maxExtensionAtr: null,
   breakevenAtR: null,
@@ -28,19 +27,20 @@ export const ORIGINAL = {
   maxBars: null,
 };
 
-// Improved variant (chosen from the backtest in backend/backtest-results/).
-// Changes vs the original: ADX trend-strength floor, 4H EMA50 agreement and
-// a cap on how far beyond the breakout level the close may be. On exits the
-// 3 ATR target stays but the stop moves to breakeven at +1R and a 48-bar
-// time stop closes trades that go nowhere.
+// Improved variant: the best in-sample result of the backtest in
+// backend/backtest-results/ (2023-2026, 8 majors). Breakout of 50 bars
+// instead of 20, 4H EMA50 agreement, a 3 ATR stop (so fees+slippage are a
+// smaller share of the risk) and a 4 ATR trailing stop instead of a fixed
+// target. It roughly breaks even after costs; it is NOT a proven edge:
+// out-of-sample it came out slightly negative.
 export const IMPROVED = {
   ...ORIGINAL,
   name: "improved",
-  adxMin: 20,
+  breakoutLookback: 50,
   htfEmaPeriod: 50,
-  maxExtensionAtr: 1.0,
-  breakevenAtR: 1.0,
-  maxBars: 48,
+  slAtr: 3.0,
+  tpAtr: null,
+  trailAtr: 4.0,
 };
 
 // Oldest-first candles -> indicator arrays aligned to the input.
@@ -205,6 +205,8 @@ export function evaluateLatest(symbol, candles, cfg = IMPROVED) {
     stop_loss: round(plan.stopLoss),
     take_profit: round(plan.takeProfit),
     risk_reward_ratio: plan.rr ?? 0,
-    reason: `Todas las reglas se cumplen: ${sig.reasons.join("; ")}.`,
+    reason:
+      `Todas las reglas se cumplen: ${sig.reasons.join("; ")}.` +
+      (cfg.trailAtr != null ? ` Sin TP fijo: trailing stop a ${cfg.trailAtr} ATR del extremo favorable.` : ""),
   };
 }
