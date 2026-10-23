@@ -1,4 +1,25 @@
 {
-  "positions": {},
+  "positions": {
+    "DOGE-USDT-SWAP": {
+      "side": "long",
+      "entry": 0.07919,
+      "sl": null,
+      "tp": null,
+      "size": 0.31,
+      "leverage": 2,
+      "openedAt": "2026-10-23T20:13:40.350Z",
+      "adopted": true
+    },
+    "SOL-USDT-SWAP": {
+      "side": "long",
+      "entry": 103.6,
+      "sl": null,
+      "tp": null,
+      "size": 0.25,
+      "leverage": 2,
+      "openedAt": "2026-10-23T20:13:38.953Z",
+      "adopted": true
+    }
+  },
   "stopLosses": {}
 }
