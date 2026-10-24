@@ -1,15 +1,5 @@
 {
   "positions": {
-    "ETH-USDT-SWAP": {
-      "side": "long",
-      "entry": 2360.48,
-      "sl": null,
-      "tp": null,
-      "size": 0.14,
-      "leverage": 2,
-      "openedAt": "2026-10-23T23:13:09.929Z",
-      "adopted": true
-    },
     "BNB-USDT-SWAP": {
       "side": "long",
       "entry": 738.6,
