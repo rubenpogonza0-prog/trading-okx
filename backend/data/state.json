@@ -9,6 +9,16 @@
       "leverage": 2,
       "openedAt": "2026-10-23T23:13:09.929Z",
       "adopted": true
+    },
+    "BNB-USDT-SWAP": {
+      "side": "long",
+      "entry": 738.6,
+      "sl": null,
+      "tp": null,
+      "size": 6,
+      "leverage": 2,
+      "openedAt": "2026-10-24T00:12:43.939Z",
+      "adopted": true
     }
   },
   "stopLosses": {}
