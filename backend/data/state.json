@@ -1,13 +1,13 @@
 {
   "positions": {
-    "SOL-USDT-SWAP": {
+    "HYPE-USDT-SWAP": {
       "side": "long",
-      "entry": 102.49,
+      "entry": 77.061,
       "sl": null,
       "tp": null,
-      "size": 0.18,
+      "size": 4,
       "leverage": 2,
-      "openedAt": "2026-10-25T04:12:56.599Z",
+      "openedAt": "2026-10-25T15:14:06.420Z",
       "adopted": true
     }
   },
