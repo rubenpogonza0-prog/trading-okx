@@ -1,4 +1,15 @@
 {
-  "positions": {},
+  "positions": {
+    "XRP-USDT-SWAP": {
+      "side": "long",
+      "entry": 1.2989,
+      "sl": null,
+      "tp": null,
+      "size": 0.26,
+      "leverage": 2,
+      "openedAt": "2026-10-25T00:12:43.364Z",
+      "adopted": true
+    }
+  },
   "stopLosses": {}
 }
