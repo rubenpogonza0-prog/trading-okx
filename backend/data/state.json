@@ -9,6 +9,26 @@
       "leverage": 2,
       "openedAt": "2026-10-25T15:14:06.420Z",
       "adopted": true
+    },
+    "BTC-USDT-SWAP": {
+      "side": "long",
+      "entry": 80652,
+      "sl": null,
+      "tp": null,
+      "size": 0.05,
+      "leverage": 2,
+      "openedAt": "2026-10-25T18:12:22.368Z",
+      "adopted": true
+    },
+    "NEAR-USDT-SWAP": {
+      "side": "long",
+      "entry": 4.656,
+      "sl": null,
+      "tp": null,
+      "size": 0.2,
+      "leverage": 2,
+      "openedAt": "2026-10-25T17:12:50.310Z",
+      "adopted": true
     }
   },
   "stopLosses": {}
