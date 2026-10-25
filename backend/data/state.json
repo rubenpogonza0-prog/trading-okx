@@ -1,15 +1,5 @@
 {
   "positions": {
-    "DOGE-USDT-SWAP": {
-      "side": "long",
-      "entry": 0.07691,
-      "sl": null,
-      "tp": null,
-      "size": 0.4,
-      "leverage": 2,
-      "openedAt": "2026-10-25T06:13:02.741Z",
-      "adopted": true
-    },
     "SOL-USDT-SWAP": {
       "side": "long",
       "entry": 102.49,
@@ -18,16 +8,6 @@
       "size": 0.18,
       "leverage": 2,
       "openedAt": "2026-10-25T04:12:56.599Z",
-      "adopted": true
-    },
-    "HYPE-USDT-SWAP": {
-      "side": "long",
-      "entry": 76.771,
-      "sl": null,
-      "tp": null,
-      "size": 4,
-      "leverage": 2,
-      "openedAt": "2026-10-25T02:12:18.309Z",
       "adopted": true
     }
   },
