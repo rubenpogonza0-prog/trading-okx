@@ -1,15 +1,5 @@
 {
   "positions": {
-    "HYPE-USDT-SWAP": {
-      "side": "long",
-      "entry": 76.209,
-      "sl": null,
-      "tp": null,
-      "size": 3,
-      "leverage": 2,
-      "openedAt": "2026-10-26T02:13:16.796Z",
-      "adopted": true
-    },
     "AVAX-USDT-SWAP": {
       "side": "long",
       "entry": 8.93,
@@ -28,6 +18,16 @@
       "size": 0.3,
       "leverage": 2,
       "openedAt": "2026-10-26T11:18:25.692Z",
+      "adopted": true
+    },
+    "BNB-USDT-SWAP": {
+      "side": "long",
+      "entry": 744.41,
+      "sl": null,
+      "tp": null,
+      "size": 5,
+      "leverage": 2,
+      "openedAt": "2026-10-26T18:13:07.413Z",
       "adopted": true
     }
   },
