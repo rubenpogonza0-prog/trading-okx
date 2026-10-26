@@ -1,4 +1,25 @@
 {
-  "positions": {},
+  "positions": {
+    "NEAR-USDT-SWAP": {
+      "side": "long",
+      "entry": 4.487,
+      "sl": null,
+      "tp": null,
+      "size": 0.4,
+      "leverage": 2,
+      "openedAt": "2026-10-26T04:13:17.787Z",
+      "adopted": true
+    },
+    "HYPE-USDT-SWAP": {
+      "side": "long",
+      "entry": 76.209,
+      "sl": null,
+      "tp": null,
+      "size": 3,
+      "leverage": 2,
+      "openedAt": "2026-10-26T02:13:16.796Z",
+      "adopted": true
+    }
+  },
   "stopLosses": {}
 }
