@@ -1,35 +1,4 @@
 {
-  "positions": {
-    "AVAX-USDT-SWAP": {
-      "side": "long",
-      "entry": 8.93,
-      "sl": null,
-      "tp": null,
-      "size": 2.5,
-      "leverage": 2,
-      "openedAt": "2026-10-26T10:14:06.024Z",
-      "adopted": true
-    },
-    "NEAR-USDT-SWAP": {
-      "side": "long",
-      "entry": 4.527,
-      "sl": null,
-      "tp": null,
-      "size": 0.3,
-      "leverage": 2,
-      "openedAt": "2026-10-26T11:18:25.692Z",
-      "adopted": true
-    },
-    "BNB-USDT-SWAP": {
-      "side": "long",
-      "entry": 744.41,
-      "sl": null,
-      "tp": null,
-      "size": 5,
-      "leverage": 2,
-      "openedAt": "2026-10-26T18:13:07.413Z",
-      "adopted": true
-    }
-  },
+  "positions": {},
   "stopLosses": {}
 }
