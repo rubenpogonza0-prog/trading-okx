@@ -2,23 +2,24 @@
 //
 //   Long  when EMA(fast) crosses above EMA(slow) and RSI > rsiLong
 //   Short when EMA(fast) crosses below EMA(slow) and RSI < rsiShort
+//   Both  also require ADX >= adxMin (trend strength), when adxMin > 0
 //   Exit  on the opposite crossover (flipping to the other side if that
 //         crossover also passes its RSI filter, otherwise going flat).
 //
 // Entries/exits fill at the close of the signal candle, with a taker fee
 // charged on each side. No leverage, no SL/TP: it measures the raw edge of
-// the signal. Also runs the same crossover without the RSI filter so you
-// can see what the filter adds.
+// the signal. Also runs the crossover with each filter on its own so you
+// can see what each one adds.
 //
 // Usage (from backend/):
 //   node src/trading/backtestEmaRsi.js --inst BTC-USDT-SWAP --bar 1H --days 365
-//   node src/trading/backtestEmaRsi.js --file candles.csv   # lines: ts,close
+//   node src/trading/backtestEmaRsi.js --file candles.csv   # lines: ts,high,low,close
 //
 // Options: --fast 6 --slow 21 --rsi 14 --rsi-long 50 --rsi-short 50
-//          --fee 0.0005 (per side) --no-short
+//          --adx 14 --adx-min 20 (0 disables) --fee 0.0005 (per side) --no-short
 import fs from "node:fs";
 import fetch from "node-fetch";
-import { ema, rsi } from "./indicators.js";
+import { ema, rsi, adx } from "./indicators.js";
 
 const BAR_MS = {
   "5m": 3e5, "15m": 9e5, "30m": 18e5, "1H": 36e5, "2H": 72e5,
@@ -28,7 +29,8 @@ const BAR_MS = {
 function parseArgs(argv) {
   const args = {
     inst: "BTC-USDT-SWAP", bar: "1H", days: 365, file: undefined,
-    fast: 6, slow: 21, rsi: 14, rsiLong: 50, rsiShort: 50, fee: 0.0005, short: true,
+    fast: 6, slow: 21, rsi: 14, rsiLong: 50, rsiShort: 50, adx: 14, adxMin: 20,
+    fee: 0.0005, short: true,
   };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, "");
@@ -51,22 +53,22 @@ async function fetchCandles(instId, bar, days) {
     const json = await res.json();
     if (json.code !== "0") throw new Error(`OKX error ${json.code}: ${json.msg}`);
     if (!json.data.length) break;
-    for (const [ts, , , , c, , , , confirm] of json.data) {
-      if (confirm === "1") out.set(Number(ts), Number(c));
+    for (const [ts, , h, l, c, , , , confirm] of json.data) {
+      if (confirm === "1") out.set(Number(ts), { high: Number(h), low: Number(l), close: Number(c) });
     }
     after = json.data[json.data.length - 1][0];
     if (Number(after) <= since) break;
     await new Promise((r) => setTimeout(r, 120)); // stay under the 20 req/2s limit
   }
   return [...out].filter(([ts]) => ts >= since).sort((a, b) => a[0] - b[0])
-    .map(([ts, close]) => ({ ts, close }));
+    .map(([ts, c]) => ({ ts, ...c }));
 }
 
 function readCsv(path) {
   return fs.readFileSync(path, "utf8").trim().split(/\r?\n/)
     .map((line) => line.split(","))
     .filter(([ts]) => /^\d+$/.test(ts))
-    .map(([ts, close]) => ({ ts: Number(ts), close: Number(close) }))
+    .map(([ts, high, low, close]) => ({ ts: Number(ts), high: Number(high), low: Number(low), close: Number(close) }))
     .sort((a, b) => a.ts - b.ts);
 }
 
@@ -75,6 +77,7 @@ export function backtest(candles, opts) {
   const fast = ema(closes, opts.fast);
   const slow = ema(closes, opts.slow);
   const r = rsi(closes, opts.rsi);
+  const { adx: adxLine } = adx(candles, opts.adx);
   const trades = [];
   let pos = null; // { side, entry, entryTs }
   let equity = 1;
@@ -90,16 +93,17 @@ export function backtest(candles, opts) {
   };
 
   for (let i = 1; i < closes.length; i++) {
-    if ([fast[i - 1], slow[i - 1], r[i]].some((v) => v === undefined)) continue;
+    if ([fast[i - 1], slow[i - 1], r[i], adxLine[i]].some((v) => v === undefined)) continue;
+    const trending = adxLine[i] >= opts.adxMin;
     const crossUp = fast[i - 1] <= slow[i - 1] && fast[i] > slow[i];
     const crossDown = fast[i - 1] >= slow[i - 1] && fast[i] < slow[i];
 
     if (pos?.side === "long" && crossDown) close(i);
     if (pos?.side === "short" && crossUp) close(i);
 
-    if (!pos && crossUp && r[i] > opts.rsiLong) {
+    if (!pos && crossUp && trending && r[i] > opts.rsiLong) {
       pos = { side: "long", entry: closes[i], entryTs: candles[i].ts };
-    } else if (!pos && opts.short && crossDown && r[i] < opts.rsiShort) {
+    } else if (!pos && opts.short && crossDown && trending && r[i] < opts.rsiShort) {
       pos = { side: "short", entry: closes[i], entryTs: candles[i].ts };
     }
 
@@ -144,19 +148,28 @@ function report(label, res) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const candles = opts.file ? readCsv(opts.file) : await fetchCandles(opts.inst, opts.bar, opts.days);
-  if (candles.length < opts.slow + opts.rsi) throw new Error(`only ${candles.length} candles`);
+  if (candles.some((c) => Number.isNaN(c.high) || Number.isNaN(c.low))) {
+    throw new Error("candles need high and low for ADX (CSV columns: ts,high,low,close)");
+  }
+  if (candles.length < opts.slow + 2 * opts.adx) throw new Error(`only ${candles.length} candles`);
   console.log(
     `${opts.file ?? `${opts.inst} ${opts.bar}`}: ${candles.length} candles, ` +
       `${day(candles[0].ts)} -> ${day(candles[candles.length - 1].ts)} UTC`
   );
-  console.log(`EMA ${opts.fast}/${opts.slow}, RSI(${opts.rsi}) long>${opts.rsiLong} short<${opts.rsiShort}, fee ${pct(opts.fee)}/side`);
+  console.log(
+    `EMA ${opts.fast}/${opts.slow}, RSI(${opts.rsi}) long>${opts.rsiLong} short<${opts.rsiShort}, ` +
+      `ADX(${opts.adx}) >= ${opts.adxMin}, fee ${pct(opts.fee)}/side`
+  );
 
-  const withRsi = backtest(candles, opts);
-  report("EMA cross + RSI filter", withRsi);
-  report("EMA cross only (no RSI filter)", backtest(candles, { ...opts, rsiLong: -1, rsiShort: 101 }));
+  const noRsi = { rsiLong: -1, rsiShort: 101 };
+  const all = backtest(candles, opts);
+  report("EMA cross + RSI + ADX", all);
+  report("EMA cross + RSI (no ADX)", backtest(candles, { ...opts, adxMin: 0 }));
+  report("EMA cross + ADX (no RSI)", backtest(candles, { ...opts, ...noRsi }));
+  report("EMA cross only", backtest(candles, { ...opts, ...noRsi, adxMin: 0 }));
 
-  console.log("\nlast trades (EMA + RSI):");
-  for (const t of withRsi.trades.slice(-10)) {
+  console.log("\nlast trades (EMA + RSI + ADX):");
+  for (const t of all.trades.slice(-10)) {
     console.log(`  ${t.side.padEnd(5)} ${day(t.entryTs)} @ ${t.entry} -> ${day(t.exitTs)} @ ${t.exit}  ${pct(t.ret)}`);
   }
 }
